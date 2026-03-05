@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}白頭翁排班薪資系統{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Microsoft JhengHei', 'Segoe UI', sans-serif; }
+        .shift-d { background-color: #dbeafe; color: #1e40af; font-weight: 600; }
+        .shift-n { background-color: #fef3c7; color: #92400e; font-weight: 600; }
+        .shift-off { background-color: #f3f4f6; color: #9ca3af; }
+        .shift-cell { cursor: pointer; user-select: none; min-width: 36px; text-align: center; }
+        .shift-cell:hover { outline: 2px solid #6366f1; }
+        .nav-active { background-color: #4f46e5; color: white; }
+        .weekend { background-color: #fef2f2; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center gap-6">
+            <span class="text-xl font-bold text-indigo-700">白頭翁排班薪資系統</span>
+            <a href="/" class="px-3 py-1.5 rounded text-sm font-medium {% if request.path == '/' %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">首頁</a>
+            <a href="/employees" class="px-3 py-1.5 rounded text-sm font-medium {% if '/employees' in request.path %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">員工管理</a>
+            <a href="/schedule" class="px-3 py-1.5 rounded text-sm font-medium {% if '/schedule' in request.path %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">排班表</a>
+            <a href="/salary" class="px-3 py-1.5 rounded text-sm font-medium {% if '/salary' in request.path %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">薪資計算</a>
+            <a href="/stats" class="px-3 py-1.5 rounded text-sm font-medium {% if '/stats' in request.path %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">統計圖表</a>
+        </div>
+    </nav>
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        {% block content %}{% endblock %}
+    </main>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,499 @@
+{% extends "base.html" %}
+{% block title %}員工管理 - 白頭翁排班薪資系統{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-2xl font-bold text-gray-800">員工管理</h1>
+    <div class="flex gap-2">
+        <button onclick="showLocationModal()" class="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700">管理醫院</button>
+        <button onclick="showAddForm()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">新增員工</button>
+    </div>
+</div>
+
+<!-- Add/Edit Form Modal -->
+<div id="formModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg">
+        <h2 id="formTitle" class="text-xl font-bold mb-4">新增員工</h2>
+        <form id="empForm" class="space-y-3">
+            <input type="hidden" id="empId">
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">姓名 *</label>
+                    <input id="empName" type="text" required class="w-full border rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">員編</label>
+                    <input id="empCode" type="text" class="w-full border rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">服務地點</label>
+                    <select id="empLocation" class="w-full border rounded-lg px-3 py-2">
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">到職日</label>
+                    <input id="empStartDate" type="date" class="w-full border rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">職稱</label>
+                    <select id="empTitle" class="w-full border rounded-lg px-3 py-2">
+                        <option value="照服員">照服員</option>
+                        <option value="管理者">管理者</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">銀行帳號</label>
+                    <input id="empBank" type="text" class="w-full border rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">日班單價</label>
+                    <input id="empDayRate" type="number" value="3068" class="w-full border rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">夜班單價</label>
+                    <input id="empNightRate" type="number" value="3168" class="w-full border rounded-lg px-3 py-2">
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 mt-4">
+                <button type="button" onclick="closeForm()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+                <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">儲存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Location Management Modal -->
+<div id="locModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+        <h2 class="text-xl font-bold mb-4">醫院管理</h2>
+        <div class="flex gap-2 mb-4">
+            <input id="newLocName" type="text" placeholder="輸入新醫院名稱" class="flex-1 border rounded-lg px-3 py-2">
+            <button onclick="addLocation()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">新增</button>
+        </div>
+        <div id="locList" class="space-y-2 max-h-60 overflow-auto"></div>
+        <div class="flex justify-end mt-4">
+            <button onclick="closeLocModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">關閉</button>
+        </div>
+    </div>
+</div>
+
+<!-- Preference Modal -->
+<div id="prefModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+        <h2 class="text-xl font-bold mb-4">排班設定 - <span id="prefEmpName"></span></h2>
+        <input type="hidden" id="prefEmpId">
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">可服務院區（可多選，不選表示不限）</label>
+                <div id="prefLocations" class="flex flex-wrap gap-2"></div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">班別限制</label>
+                <select id="prefShifts" class="w-full border rounded-lg px-3 py-2">
+                    <option value="both">不限（日班+夜班皆可）</option>
+                    <option value="D">僅日班</option>
+                    <option value="N">僅夜班</option>
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">月最低天數</label>
+                    <input id="prefMinDays" type="number" min="0" max="31" value="0" class="w-full border rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">月最高天數</label>
+                    <input id="prefMaxDays" type="number" min="0" max="31" value="31" class="w-full border rounded-lg px-3 py-2">
+                </div>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">排班模式</label>
+                <select id="prefScheduleMode" class="w-full border rounded-lg px-3 py-2" onchange="toggleScheduleMode()">
+                    <option value="none">不指定</option>
+                    <option value="weekdays">指定上班星期</option>
+                    <option value="pattern">做X休Y</option>
+                </select>
+            </div>
+            <div id="prefWeekdaysDiv" class="hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-1">上班星期（可多選）</label>
+                <div class="flex flex-wrap gap-2" id="prefWeekdaysCbs"></div>
+            </div>
+            <div id="prefPatternDiv" class="hidden grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">連續工作天</label>
+                    <input id="prefPatternWork" type="number" min="1" max="31" value="5" class="w-full border rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">連續休息天</label>
+                    <input id="prefPatternOff" type="number" min="1" max="31" value="2" class="w-full border rounded-lg px-3 py-2">
+                </div>
+            </div>
+            <!-- 預定排休 -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">預定排休</label>
+                <div class="flex items-center gap-2 mb-2">
+                    <button onclick="prevTimeOffMonth()" class="px-2 py-1 border rounded text-sm">&larr;</button>
+                    <span id="timeOffMonthLabel" class="text-sm font-medium min-w-[90px] text-center"></span>
+                    <button onclick="nextTimeOffMonth()" class="px-2 py-1 border rounded text-sm">&rarr;</button>
+                </div>
+                <div id="timeOffCalendar" class="grid grid-cols-7 gap-1 text-center text-xs"></div>
+                <div id="timeOffList" class="mt-2 space-y-1 max-h-32 overflow-auto"></div>
+            </div>
+        </div>
+        <div class="flex justify-end gap-3 mt-4">
+            <button onclick="closePrefModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+            <button onclick="savePref()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">儲存</button>
+        </div>
+    </div>
+</div>
+
+<!-- Employee Table -->
+<div class="bg-white rounded-xl shadow overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 border-b">
+            <tr>
+                <th class="px-4 py-3 text-left">姓名</th>
+                <th class="px-4 py-3 text-left">員編</th>
+                <th class="px-4 py-3 text-left">地點</th>
+                <th class="px-4 py-3 text-left">到職日</th>
+                <th class="px-4 py-3 text-left">職稱</th>
+                <th class="px-4 py-3 text-right">日班單價</th>
+                <th class="px-4 py-3 text-right">夜班單價</th>
+                <th class="px-4 py-3 text-left">銀行帳號</th>
+                <th class="px-4 py-3 text-center">操作</th>
+            </tr>
+        </thead>
+        <tbody id="empTable">
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let employees = [];
+let locations = [];
+
+async function loadLocations() {
+    const res = await fetch('/api/locations');
+    locations = await res.json();
+    const sel = document.getElementById('empLocation');
+    sel.innerHTML = locations.map(l => `<option value="${l.name}">${l.name}</option>`).join('');
+}
+
+async function loadEmployees() {
+    const res = await fetch('/api/employees');
+    employees = await res.json();
+    renderTable();
+}
+
+// --- Location Management ---
+function showLocationModal() {
+    document.getElementById('locModal').classList.remove('hidden');
+    renderLocList();
+}
+function closeLocModal() {
+    document.getElementById('locModal').classList.add('hidden');
+}
+function renderLocList() {
+    const list = document.getElementById('locList');
+    list.innerHTML = locations.map(l => `
+        <div class="flex items-center justify-between border rounded-lg px-3 py-2 gap-2">
+            <span class="font-medium">${l.name}</span>
+            <div class="flex items-center gap-2">
+                <label class="text-xs text-gray-500">最大連續天數</label>
+                <input type="number" min="1" max="31" value="${l.max_consecutive_days}" class="w-14 border rounded px-1 py-0.5 text-sm"
+                    onchange="updateLocMax(${l.id}, this.value)">
+                <button onclick="deleteLocation(${l.id})" class="text-red-500 hover:underline text-sm">刪除</button>
+            </div>
+        </div>
+    `).join('');
+}
+async function addLocation() {
+    const input = document.getElementById('newLocName');
+    const name = input.value.trim();
+    if (!name) return;
+    const res = await fetch('/api/locations', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name})
+    });
+    if (res.ok) {
+        input.value = '';
+        await loadLocations();
+        renderLocList();
+    } else {
+        const err = await res.json();
+        alert(err.error || '新增失敗');
+    }
+}
+async function updateLocMax(id, val) {
+    await fetch(`/api/locations/${id}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name: locations.find(l=>l.id===id).name, max_consecutive_days: parseInt(val) })
+    });
+    await loadLocations();
+}
+async function deleteLocation(id) {
+    if (!confirm('確定要刪除此醫院？')) return;
+    await fetch(`/api/locations/${id}`, { method: 'DELETE' });
+    await loadLocations();
+    renderLocList();
+}
+
+function renderTable() {
+    const tbody = document.getElementById('empTable');
+    tbody.innerHTML = employees.map(e => `
+        <tr class="border-b hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium">${e.name}</td>
+            <td class="px-4 py-3">${e.emp_code}</td>
+            <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs font-medium ${e.location === '雙和' ? 'bg-blue-100 text-blue-700' : e.location === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${e.location}</span></td>
+            <td class="px-4 py-3">${e.start_date}</td>
+            <td class="px-4 py-3">${e.job_title}</td>
+            <td class="px-4 py-3 text-right">${e.day_rate.toLocaleString()}</td>
+            <td class="px-4 py-3 text-right">${e.night_rate.toLocaleString()}</td>
+            <td class="px-4 py-3 text-xs">${e.bank_account}</td>
+            <td class="px-4 py-3 text-center">
+                <button onclick="showPrefModal(${e.id})" class="text-green-600 hover:underline mr-2">排班設定</button>
+                <button onclick="editEmployee(${e.id})" class="text-indigo-600 hover:underline mr-2">編輯</button>
+                <button onclick="deleteEmployee(${e.id})" class="text-red-500 hover:underline">刪除</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showAddForm() {
+    document.getElementById('formTitle').textContent = '新增員工';
+    document.getElementById('empId').value = '';
+    document.getElementById('empName').value = '';
+    document.getElementById('empCode').value = '';
+    document.getElementById('empLocation').value = '雙和';
+    document.getElementById('empStartDate').value = '';
+    document.getElementById('empTitle').value = '照服員';
+    document.getElementById('empBank').value = '';
+    document.getElementById('empDayRate').value = '3068';
+    document.getElementById('empNightRate').value = '3168';
+    document.getElementById('formModal').classList.remove('hidden');
+}
+
+function editEmployee(id) {
+    const e = employees.find(x => x.id === id);
+    if (!e) return;
+    document.getElementById('formTitle').textContent = '編輯員工';
+    document.getElementById('empId').value = e.id;
+    document.getElementById('empName').value = e.name;
+    document.getElementById('empCode').value = e.emp_code;
+    document.getElementById('empLocation').value = e.location;
+    document.getElementById('empStartDate').value = e.start_date;
+    document.getElementById('empTitle').value = e.job_title;
+    document.getElementById('empBank').value = e.bank_account;
+    document.getElementById('empDayRate').value = e.day_rate;
+    document.getElementById('empNightRate').value = e.night_rate;
+    document.getElementById('formModal').classList.remove('hidden');
+}
+
+function closeForm() {
+    document.getElementById('formModal').classList.remove('hidden');
+    document.getElementById('formModal').classList.add('hidden');
+}
+
+async function deleteEmployee(id) {
+    if (!confirm('確定要刪除此員工？')) return;
+    await fetch(`/api/employees/${id}`, { method: 'DELETE' });
+    loadEmployees();
+}
+
+document.getElementById('empForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const id = document.getElementById('empId').value;
+    const data = {
+        name: document.getElementById('empName').value,
+        emp_code: document.getElementById('empCode').value,
+        location: document.getElementById('empLocation').value,
+        start_date: document.getElementById('empStartDate').value,
+        job_title: document.getElementById('empTitle').value,
+        bank_account: document.getElementById('empBank').value,
+        day_rate: document.getElementById('empDayRate').value,
+        night_rate: document.getElementById('empNightRate').value,
+    };
+    if (id) {
+        await fetch(`/api/employees/${id}`, {
+            method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+        });
+    } else {
+        await fetch('/api/employees', {
+            method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
+        });
+    }
+    closeForm();
+    loadEmployees();
+});
+
+// --- Preference Modal ---
+async function showPrefModal(empId) {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+    document.getElementById('prefEmpName').textContent = emp.name;
+    document.getElementById('prefEmpId').value = empId;
+
+    // Render location checkboxes
+    const locDiv = document.getElementById('prefLocations');
+    const res = await fetch(`/api/employee-preferences/${empId}`);
+    const pref = await res.json();
+
+    locDiv.innerHTML = locations.map(l => {
+        const checked = pref.allowed_locations.includes(l.name) ? 'checked' : '';
+        return `<label class="flex items-center gap-1 bg-gray-100 rounded px-2 py-1 text-sm cursor-pointer">
+            <input type="checkbox" class="pref-loc-cb" value="${l.name}" ${checked}> ${l.name}
+        </label>`;
+    }).join('');
+
+    document.getElementById('prefShifts').value = pref.allowed_shifts;
+    document.getElementById('prefMinDays').value = pref.min_days;
+    document.getElementById('prefMaxDays').value = pref.max_days;
+
+    // Schedule mode
+    document.getElementById('prefScheduleMode').value = pref.schedule_mode || 'none';
+    // Weekdays checkboxes
+    const wdNames = ['一','二','三','四','五','六','日'];
+    const wdDiv = document.getElementById('prefWeekdaysCbs');
+    wdDiv.innerHTML = wdNames.map((name, i) => {
+        const checked = (pref.work_weekdays || []).includes(i) ? 'checked' : '';
+        return `<label class="flex items-center gap-1 bg-gray-100 rounded px-2 py-1 text-sm cursor-pointer">
+            <input type="checkbox" class="pref-wd-cb" value="${i}" ${checked}> ${name}
+        </label>`;
+    }).join('');
+    // Pattern
+    document.getElementById('prefPatternWork').value = pref.pattern_work || 5;
+    document.getElementById('prefPatternOff').value = pref.pattern_off || 2;
+    toggleScheduleMode();
+
+    // Init time off
+    timeOffEmpId = empId;
+    initTimeOffMonth();
+    loadTimeOff();
+
+    document.getElementById('prefModal').classList.remove('hidden');
+}
+
+function toggleScheduleMode() {
+    const mode = document.getElementById('prefScheduleMode').value;
+    document.getElementById('prefWeekdaysDiv').classList.toggle('hidden', mode !== 'weekdays');
+    document.getElementById('prefPatternDiv').classList.toggle('hidden', mode !== 'pattern');
+}
+
+function closePrefModal() {
+    document.getElementById('prefModal').classList.add('hidden');
+}
+
+async function savePref() {
+    const empId = document.getElementById('prefEmpId').value;
+    const checked = [...document.querySelectorAll('.pref-loc-cb:checked')].map(cb => cb.value);
+    const weekdays = [...document.querySelectorAll('.pref-wd-cb:checked')].map(cb => parseInt(cb.value));
+    const data = {
+        allowed_locations: checked,
+        allowed_shifts: document.getElementById('prefShifts').value,
+        min_days: parseInt(document.getElementById('prefMinDays').value) || 0,
+        max_days: parseInt(document.getElementById('prefMaxDays').value) || 31,
+        schedule_mode: document.getElementById('prefScheduleMode').value,
+        work_weekdays: weekdays,
+        pattern_work: parseInt(document.getElementById('prefPatternWork').value) || 5,
+        pattern_off: parseInt(document.getElementById('prefPatternOff').value) || 2,
+    };
+    await fetch(`/api/employee-preferences/${empId}`, {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(data)
+    });
+    closePrefModal();
+}
+
+// --- Time Off (預定排休) ---
+let timeOffYear, timeOffMonth, timeOffEmpId;
+let timeOffDates = new Set(); // stored as "YYYY-MM-DD"
+
+function initTimeOffMonth() {
+    const now = new Date();
+    // Default to next month
+    timeOffYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+    timeOffMonth = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+}
+
+function prevTimeOffMonth() {
+    timeOffMonth--;
+    if (timeOffMonth < 1) { timeOffMonth = 12; timeOffYear--; }
+    loadTimeOff();
+}
+function nextTimeOffMonth() {
+    timeOffMonth++;
+    if (timeOffMonth > 12) { timeOffMonth = 1; timeOffYear++; }
+    loadTimeOff();
+}
+
+async function loadTimeOff() {
+    document.getElementById('timeOffMonthLabel').textContent = `${timeOffYear}年${timeOffMonth}月`;
+    const res = await fetch(`/api/time-off/${timeOffEmpId}?year=${timeOffYear}&month=${timeOffMonth}`);
+    const data = await res.json();
+    timeOffDates = new Set(data.map(t => t.date));
+    renderTimeOffCalendar();
+    renderTimeOffList(data);
+}
+
+function renderTimeOffCalendar() {
+    const cal = document.getElementById('timeOffCalendar');
+    const daysInMonth = new Date(timeOffYear, timeOffMonth, 0).getDate();
+    const firstDay = new Date(timeOffYear, timeOffMonth - 1, 1).getDay(); // 0=Sun
+    const wdNames = ['日','一','二','三','四','五','六'];
+
+    let html = wdNames.map(w => `<div class="font-medium text-gray-400">${w}</div>`).join('');
+    // Empty cells before first day
+    for (let i = 0; i < firstDay; i++) html += '<div></div>';
+
+    for (let d = 1; d <= daysInMonth; d++) {
+        const ds = `${timeOffYear}-${String(timeOffMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+        const isOff = timeOffDates.has(ds);
+        const wd = new Date(timeOffYear, timeOffMonth - 1, d).getDay();
+        const isWeekend = wd === 0 || wd === 6;
+        html += `<div class="cursor-pointer rounded py-1 ${isOff ? 'bg-red-500 text-white font-bold' : isWeekend ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-gray-100'}"
+            onclick="toggleTimeOff('${ds}', ${d})">${d}</div>`;
+    }
+    cal.innerHTML = html;
+}
+
+function renderTimeOffList(data) {
+    const list = document.getElementById('timeOffList');
+    if (data.length === 0) {
+        list.innerHTML = '<div class="text-xs text-gray-400">點擊日期可設定排休</div>';
+        return;
+    }
+    list.innerHTML = data.map(t => {
+        const d = new Date(t.date);
+        const wdNames = ['日','一','二','三','四','五','六'];
+        return `<div class="flex items-center justify-between bg-red-50 rounded px-2 py-1 text-xs">
+            <span>${t.date} (${wdNames[d.getDay()]})</span>
+            <button onclick="removeTimeOff(${t.id})" class="text-red-500 hover:underline">取消</button>
+        </div>`;
+    }).join('');
+}
+
+async function toggleTimeOff(dateStr, day) {
+    if (timeOffDates.has(dateStr)) {
+        // Remove - need to find the ID first
+        const res = await fetch(`/api/time-off/${timeOffEmpId}?year=${timeOffYear}&month=${timeOffMonth}`);
+        const data = await res.json();
+        const item = data.find(t => t.date === dateStr);
+        if (item) await fetch(`/api/time-off/${timeOffEmpId}/${item.id}`, { method: 'DELETE' });
+    } else {
+        // Add
+        await fetch(`/api/time-off/${timeOffEmpId}`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ date: dateStr, reason: '' })
+        });
+    }
+    loadTimeOff();
+}
+
+async function removeTimeOff(tid) {
+    await fetch(`/api/time-off/${timeOffEmpId}/${tid}`, { method: 'DELETE' });
+    loadTimeOff();
+}
+
+loadLocations().then(() => loadEmployees());
+</script>
+{% endblock %}

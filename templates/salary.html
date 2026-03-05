@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+{% block title %}薪資計算 - 白頭翁排班薪資系統{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold text-gray-800">薪資計算</h1>
+    <div class="flex items-center gap-3">
+        <button onclick="prevMonth()" class="px-3 py-2 border rounded-lg hover:bg-gray-100">&larr;</button>
+        <span id="monthLabel" class="text-lg font-bold min-w-[120px] text-center">{{ year }}年{{ month }}月</span>
+        <button onclick="nextMonth()" class="px-3 py-2 border rounded-lg hover:bg-gray-100">&rarr;</button>
+        <button onclick="exportAll()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 ml-4">匯出全部薪資明細</button>
+    </div>
+</div>
+
+<div class="space-y-4" id="salaryList"></div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <h2 class="text-xl font-bold mb-4" id="editTitle">編輯薪資</h2>
+        <form id="editForm" class="space-y-4">
+            <input type="hidden" id="editEmpId">
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <h3 class="font-bold text-green-700 border-b pb-1 mb-2">發金額（額外項目）</h3>
+                </div>
+                <div class="col-span-2" id="extraEarningsContainer"></div>
+                <button type="button" onclick="addEarning()" class="text-sm text-indigo-600 hover:underline">+ 新增發金額項目</button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <h3 class="font-bold text-red-700 border-b pb-1 mb-2">扣金額</h3>
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600">提早撥款本月薪資</label>
+                    <input id="editAdvancePay" type="number" value="0" class="w-full border rounded px-3 py-1.5">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600">健保費眷屬</label>
+                    <input id="editHealthIns" type="number" value="0" class="w-full border rounded px-3 py-1.5">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600">福利金</label>
+                    <input id="editWelfare" type="number" value="0" class="w-full border rounded px-3 py-1.5">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600">請假</label>
+                    <input id="editLeave" type="number" value="0" class="w-full border rounded px-3 py-1.5">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600">匯費</label>
+                    <input id="editTransfer" type="number" value="0" class="w-full border rounded px-3 py-1.5">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2" id="extraDeductionsContainer"></div>
+                <button type="button" onclick="addDeduction()" class="text-sm text-red-600 hover:underline">+ 新增扣金額項目</button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-600">入帳日期</label>
+                    <input id="editPayDate" type="date" class="w-full border rounded px-3 py-1.5">
+                </div>
+                <div>
+                    <label class="block text-sm text-gray-600">備註</label>
+                    <input id="editNote" type="text" class="w-full border rounded px-3 py-1.5">
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-3">
+                <button type="button" onclick="closeEdit()" class="px-4 py-2 border rounded-lg">取消</button>
+                <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg">儲存</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentYear = {{ year }};
+let currentMonth = {{ month }};
+let salaryData = [];
+let editingIdx = -1;
+
+function prevMonth() {
+    currentMonth--;
+    if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    loadSalary();
+}
+function nextMonth() {
+    currentMonth++;
+    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+    loadSalary();
+}
+
+async function loadSalary() {
+    document.getElementById('monthLabel').textContent = `${currentYear}年${currentMonth}月`;
+    const res = await fetch(`/api/salary/calculate?year=${currentYear}&month=${currentMonth}`);
+    const json = await res.json();
+    salaryData = json.data;
+    renderSalary();
+}
+
+function fmt(n) { return n.toLocaleString(); }
+
+function renderSalary() {
+    const list = document.getElementById('salaryList');
+    if (salaryData.length === 0) {
+        list.innerHTML = '<div class="text-center text-gray-400 py-12">尚無員工資料，請先至員工管理新增員工並排班</div>';
+        return;
+    }
+
+    list.innerHTML = salaryData.map((s, idx) => {
+        const emp = s.employee;
+        return `
+        <div class="bg-white rounded-xl shadow p-5">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-3">
+                    <span class="font-bold text-lg">${emp.name}</span>
+                    <span class="text-sm text-gray-400">${emp.emp_code}</span>
+                    <span class="px-2 py-0.5 rounded text-xs font-medium ${emp.location === '雙和' ? 'bg-blue-100 text-blue-700' : emp.location === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${emp.location}</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="openEdit(${idx})" class="text-sm px-3 py-1.5 border rounded-lg hover:bg-gray-50">編輯加扣項</button>
+                    <a href="/api/salary/export/${emp.id}?year=${currentYear}&month=${currentMonth}" class="text-sm px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700">匯出明細</a>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                <div class="bg-blue-50 rounded-lg p-3">
+                    <div class="text-gray-500">日班</div>
+                    <div class="font-bold text-blue-700">${s.day_shifts}天 x ${fmt(s.day_rate)} = ${fmt(s.day_total)}</div>
+                </div>
+                <div class="bg-amber-50 rounded-lg p-3">
+                    <div class="text-gray-500">夜班</div>
+                    <div class="font-bold text-amber-700">${s.night_shifts}天 x ${fmt(s.night_rate)} = ${fmt(s.night_total)}</div>
+                </div>
+                <div class="bg-green-50 rounded-lg p-3">
+                    <div class="text-gray-500">額外加項</div>
+                    <div class="font-bold text-green-700">${fmt(s.extra_earn_total)}</div>
+                    ${s.extra_earnings.map(e => `<div class="text-xs text-gray-400">${e.name}: ${fmt(e.amount)}</div>`).join('')}
+                </div>
+                <div class="bg-red-50 rounded-lg p-3">
+                    <div class="text-gray-500">扣款合計</div>
+                    <div class="font-bold text-red-600">-${fmt(s.deduct_total)}</div>
+                </div>
+                <div class="bg-indigo-50 rounded-lg p-3">
+                    <div class="text-gray-500">實領薪資</div>
+                    <div class="font-bold text-indigo-700 text-xl">${fmt(s.actual_pay)}</div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function openEdit(idx) {
+    editingIdx = idx;
+    const s = salaryData[idx];
+    document.getElementById('editTitle').textContent = `編輯薪資 - ${s.employee.name}`;
+    document.getElementById('editEmpId').value = s.employee.id;
+    document.getElementById('editAdvancePay').value = s.deductions.advance_pay;
+    document.getElementById('editHealthIns').value = s.deductions.health_insurance;
+    document.getElementById('editWelfare').value = s.deductions.welfare_fund;
+    document.getElementById('editLeave').value = s.deductions.leave_deduct;
+    document.getElementById('editTransfer').value = s.deductions.transfer_fee;
+    document.getElementById('editPayDate').value = s.payment_date || '';
+    document.getElementById('editNote').value = s.note || '';
+
+    // Extra earnings
+    const ec = document.getElementById('extraEarningsContainer');
+    ec.innerHTML = '';
+    (s.extra_earnings || []).forEach((e, i) => {
+        ec.innerHTML += earningRow(i, e.name, e.amount);
+    });
+
+    // Extra deductions
+    const dc = document.getElementById('extraDeductionsContainer');
+    dc.innerHTML = '';
+    (s.extra_deductions || []).forEach((d, i) => {
+        dc.innerHTML += deductionRow(i, d.name, d.amount);
+    });
+
+    document.getElementById('editModal').classList.remove('hidden');
+}
+
+function closeEdit() {
+    document.getElementById('editModal').classList.add('hidden');
+}
+
+let earningCount = 0;
+function earningRow(i, name, amount) {
+    earningCount = Math.max(earningCount, i + 1);
+    return `<div class="flex gap-2 mb-2 items-center" id="earn_${i}">
+        <input type="text" value="${name}" placeholder="項目名稱" class="border rounded px-2 py-1 flex-1 earn-name">
+        <input type="number" value="${amount}" placeholder="金額" class="border rounded px-2 py-1 w-32 earn-amount">
+        <button type="button" onclick="document.getElementById('earn_${i}').remove()" class="text-red-400 hover:text-red-600">x</button>
+    </div>`;
+}
+
+function addEarning() {
+    const ec = document.getElementById('extraEarningsContainer');
+    ec.innerHTML += earningRow(earningCount++, '', 0);
+}
+
+let deductCount = 0;
+function deductionRow(i, name, amount) {
+    deductCount = Math.max(deductCount, i + 1);
+    return `<div class="flex gap-2 mb-2 items-center" id="deduct_${i}">
+        <input type="text" value="${name}" placeholder="項目名稱" class="border rounded px-2 py-1 flex-1 deduct-name">
+        <input type="number" value="${amount}" placeholder="金額" class="border rounded px-2 py-1 w-32 deduct-amount">
+        <button type="button" onclick="document.getElementById('deduct_${i}').remove()" class="text-red-400 hover:text-red-600">x</button>
+    </div>`;
+}
+
+function addDeduction() {
+    const dc = document.getElementById('extraDeductionsContainer');
+    dc.innerHTML += deductionRow(deductCount++, '', 0);
+}
+
+document.getElementById('editForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const s = salaryData[editingIdx];
+
+    const extraEarnings = [];
+    document.querySelectorAll('#extraEarningsContainer > div').forEach(div => {
+        const name = div.querySelector('.earn-name').value.trim();
+        const amount = parseInt(div.querySelector('.earn-amount').value) || 0;
+        if (name && amount) extraEarnings.push({ name, amount });
+    });
+
+    const extraDeductions = [];
+    document.querySelectorAll('#extraDeductionsContainer > div').forEach(div => {
+        const name = div.querySelector('.deduct-name').value.trim();
+        const amount = parseInt(div.querySelector('.deduct-amount').value) || 0;
+        if (name && amount) extraDeductions.push({ name, amount });
+    });
+
+    await fetch('/api/salary/save', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+            employee_id: s.employee.id,
+            year: currentYear,
+            month: currentMonth,
+            day_shifts: s.day_shifts,
+            night_shifts: s.night_shifts,
+            day_rate: s.day_rate,
+            night_rate: s.night_rate,
+            extra_earnings: extraEarnings,
+            advance_pay: parseInt(document.getElementById('editAdvancePay').value) || 0,
+            health_insurance: parseInt(document.getElementById('editHealthIns').value) || 0,
+            welfare_fund: parseInt(document.getElementById('editWelfare').value) || 0,
+            leave_deduct: parseInt(document.getElementById('editLeave').value) || 0,
+            transfer_fee: parseInt(document.getElementById('editTransfer').value) || 0,
+            extra_deductions: extraDeductions,
+            payment_date: document.getElementById('editPayDate').value,
+            note: document.getElementById('editNote').value,
+        })
+    });
+
+    closeEdit();
+    loadSalary();
+});
+
+function exportAll() {
+    window.location.href = `/api/salary/export-all?year=${currentYear}&month=${currentMonth}`;
+}
+
+loadSalary();
+</script>
+{% endblock %}

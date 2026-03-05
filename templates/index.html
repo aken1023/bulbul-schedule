@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+    <a href="/employees" class="block p-8 bg-white rounded-xl shadow hover:shadow-lg transition">
+        <div class="text-3xl mb-3">👥</div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">員工管理</h2>
+        <p class="text-gray-500">新增、編輯照服員資料、薪資標準</p>
+    </a>
+    <a href="/schedule" class="block p-8 bg-white rounded-xl shadow hover:shadow-lg transition">
+        <div class="text-3xl mb-3">📅</div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">排班表</h2>
+        <p class="text-gray-500">月曆排班，支援日班(D)、夜班(N)、休假(OFF)</p>
+    </a>
+    <a href="/salary" class="block p-8 bg-white rounded-xl shadow hover:shadow-lg transition">
+        <div class="text-3xl mb-3">💰</div>
+        <h2 class="text-xl font-bold text-gray-800 mb-2">薪資計算</h2>
+        <p class="text-gray-500">自動計算薪資、調整加扣項、匯出薪資明細表</p>
+    </a>
+</div>
+{% endblock %}

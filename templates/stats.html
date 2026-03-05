@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}統計圖表 - 白頭翁排班薪資系統{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold text-gray-800">統計圖表</h1>
+    <div class="flex items-center gap-3">
+        <button onclick="prevMonth()" class="px-3 py-2 border rounded-lg hover:bg-gray-100">&larr;</button>
+        <span id="monthLabel" class="text-lg font-bold min-w-[120px] text-center">{{ year }}年{{ month }}月</span>
+        <button onclick="nextMonth()" class="px-3 py-2 border rounded-lg hover:bg-gray-100">&rarr;</button>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- 各地點班次總覽 -->
+    <div class="bg-white rounded-xl shadow p-4">
+        <h3 class="font-bold text-gray-700 mb-2">各地點班次總覽</h3>
+        <canvas id="chartLocShifts"></canvas>
+    </div>
+    <!-- 員工班次統計 -->
+    <div class="bg-white rounded-xl shadow p-4">
+        <h3 class="font-bold text-gray-700 mb-2">員工班次統計</h3>
+        <canvas id="chartEmpShifts"></canvas>
+    </div>
+    <!-- 員工薪資排行 -->
+    <div class="bg-white rounded-xl shadow p-4">
+        <h3 class="font-bold text-gray-700 mb-2">員工薪資總覽</h3>
+        <canvas id="chartSalary"></canvas>
+    </div>
+    <!-- 每日人力配置 -->
+    <div class="bg-white rounded-xl shadow p-4">
+        <h3 class="font-bold text-gray-700 mb-2">每日人力配置</h3>
+        <canvas id="chartDaily"></canvas>
+    </div>
+</div>
+
+<!-- 摘要卡片 -->
+<div id="summaryCards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentYear = {{ year }};
+let currentMonth = {{ month }};
+let charts = {};
+
+function prevMonth() {
+    currentMonth--;
+    if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    loadStats();
+}
+function nextMonth() {
+    currentMonth++;
+    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+    loadStats();
+}
+
+function destroyCharts() {
+    Object.values(charts).forEach(c => c.destroy());
+    charts = {};
+}
+
+const COLORS = {
+    D: 'rgba(59,130,246,0.7)',
+    N: 'rgba(245,158,11,0.7)',
+    OFF: 'rgba(209,213,219,0.7)',
+    salary: 'rgba(16,185,129,0.7)',
+};
+
+async function loadStats() {
+    document.getElementById('monthLabel').textContent = `${currentYear}年${currentMonth}月`;
+    const res = await fetch(`/api/stats?year=${currentYear}&month=${currentMonth}`);
+    const data = await res.json();
+    destroyCharts();
+    renderCharts(data);
+    renderSummary(data);
+}
+
+function renderCharts(data) {
+    const { locations, location_totals, employees, location_daily_d, location_daily_n, days_in_month } = data;
+
+    // 1. Location shift totals (grouped bar)
+    charts.locShifts = new Chart(document.getElementById('chartLocShifts'), {
+        type: 'bar',
+        data: {
+            labels: locations,
+            datasets: [
+                { label: '日班(D)', data: locations.map(l => location_totals[l].D), backgroundColor: COLORS.D },
+                { label: '夜班(N)', data: locations.map(l => location_totals[l].N), backgroundColor: COLORS.N },
+            ]
+        },
+        options: { responsive: true, plugins: { legend: { position: 'top' } } }
+    });
+
+    // 2. Employee shifts (stacked horizontal bar)
+    const empNames = employees.map(e => e.name);
+    charts.empShifts = new Chart(document.getElementById('chartEmpShifts'), {
+        type: 'bar',
+        data: {
+            labels: empNames,
+            datasets: [
+                { label: '日班(D)', data: employees.map(e => e.D), backgroundColor: COLORS.D },
+                { label: '夜班(N)', data: employees.map(e => e.N), backgroundColor: COLORS.N },
+                { label: '休假(OFF)', data: employees.map(e => e.OFF), backgroundColor: COLORS.OFF },
+            ]
+        },
+        options: {
+            indexAxis: 'y', responsive: true,
+            scales: { x: { stacked: true }, y: { stacked: true } },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+
+    // 3. Salary bar chart
+    const sorted = [...employees].sort((a, b) => b.actual_pay - a.actual_pay);
+    charts.salary = new Chart(document.getElementById('chartSalary'), {
+        type: 'bar',
+        data: {
+            labels: sorted.map(e => e.name),
+            datasets: [{
+                label: '實領薪資',
+                data: sorted.map(e => e.actual_pay),
+                backgroundColor: sorted.map(e => e.location === '雙和' ? 'rgba(59,130,246,0.6)' : 'rgba(16,185,129,0.6)'),
+            }]
+        },
+        options: {
+            indexAxis: 'y', responsive: true,
+            plugins: { legend: { display: false } },
+            scales: { x: { ticks: { callback: v => v.toLocaleString() } } }
+        }
+    });
+
+    // 4. Daily staffing line chart
+    const dayLabels = Array.from({length: days_in_month}, (_, i) => i + 1);
+    const datasets = [];
+    locations.forEach((loc, idx) => {
+        const colors = ['rgba(59,130,246,', 'rgba(16,185,129,', 'rgba(245,158,11,', 'rgba(239,68,68,'];
+        const c = colors[idx % colors.length];
+        datasets.push({
+            label: `${loc} D班`,
+            data: location_daily_d[loc],
+            borderColor: c + '1)',
+            backgroundColor: c + '0.1)',
+            fill: true, tension: 0.3,
+        });
+        datasets.push({
+            label: `${loc} N班`,
+            data: location_daily_n[loc],
+            borderColor: c + '0.6)',
+            backgroundColor: c + '0.05)',
+            borderDash: [5, 5],
+            fill: true, tension: 0.3,
+        });
+    });
+    charts.daily = new Chart(document.getElementById('chartDaily'), {
+        type: 'line',
+        data: { labels: dayLabels, datasets },
+        options: {
+            responsive: true,
+            scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+            plugins: { legend: { position: 'top' } }
+        }
+    });
+}
+
+function renderSummary(data) {
+    const { employees, locations, location_totals } = data;
+    const totalPay = employees.reduce((s, e) => s + e.actual_pay, 0);
+    const totalD = employees.reduce((s, e) => s + e.D, 0);
+    const totalN = employees.reduce((s, e) => s + e.N, 0);
+
+    const cards = [
+        { label: '員工人數', value: employees.length, color: 'indigo' },
+        { label: '總日班次', value: totalD, color: 'blue' },
+        { label: '總夜班次', value: totalN, color: 'amber' },
+        { label: '薪資總額', value: totalPay.toLocaleString(), color: 'emerald' },
+    ];
+
+    document.getElementById('summaryCards').innerHTML = cards.map(c => `
+        <div class="bg-white rounded-xl shadow p-4 text-center">
+            <div class="text-sm text-gray-500">${c.label}</div>
+            <div class="text-2xl font-bold text-${c.color}-600 mt-1">${c.value}</div>
+        </div>
+    `).join('');
+}
+
+loadStats();
+</script>
+{% endblock %}

@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}排班表 - 白頭翁排班薪資系統{% endblock %}
+{% block extra_head %}
+<style>
+    .schedule-table { border-collapse: collapse; }
+    .schedule-table th, .schedule-table td { border: 1px solid #d1d5db; padding: 4px 6px; font-size: 13px; }
+    .schedule-table th { background: #f3f4f6; position: sticky; top: 0; z-index: 10; }
+    .schedule-table .name-col { position: sticky; left: 0; background: white; z-index: 5; min-width: 80px; }
+    .schedule-table thead .name-col { z-index: 15; }
+    .stat-d { color: #1e40af; font-weight: 600; }
+    .stat-n { color: #92400e; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-4">
+    <h1 class="text-2xl font-bold text-gray-800">排班表</h1>
+    <div class="flex items-center gap-3">
+        <select id="locationFilter" class="border rounded-lg px-3 py-2 text-sm">
+            <option value="">全部地點</option>
+        </select>
+        <button id="autoBtn" onclick="showAutoModal()" class="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm">自動排班</button>
+        <button onclick="prevMonth()" class="px-3 py-2 border rounded-lg hover:bg-gray-100">&larr;</button>
+        <span id="monthLabel" class="text-lg font-bold min-w-[120px] text-center">{{ year }}年{{ month }}月</span>
+        <button onclick="nextMonth()" class="px-3 py-2 border rounded-lg hover:bg-gray-100">&rarr;</button>
+    </div>
+</div>
+
+<div class="bg-white rounded-xl shadow overflow-auto" style="max-height: 75vh;">
+    <table class="schedule-table w-full" id="scheduleTable">
+        <thead><tr id="headerRow"></tr></thead>
+        <tbody id="scheduleBody"></tbody>
+        <tfoot id="scheduleFoot"></tfoot>
+    </table>
+</div>
+
+<div class="mt-3 text-sm text-gray-500">
+    點擊班別格子可切換：D(日班) → N(夜班) → OFF(休假)
+</div>
+
+<!-- Auto Schedule Modal -->
+<div id="autoModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[80vh] overflow-auto">
+        <h2 class="text-xl font-bold mb-4">自動排班設定</h2>
+        <p class="text-sm text-gray-500 mb-3">設定各院區每日所需人力，系統會依照員工偏好自動產生排班</p>
+        <div id="autoStaffing" class="space-y-3 mb-4"></div>
+        <div class="flex justify-end gap-3">
+            <button onclick="closeAutoModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+            <button onclick="runAutoSchedule()" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">產生排班</button>
+        </div>
+    </div>
+</div>
+
+<!-- Auto Schedule Preview Modal -->
+<div id="previewModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-6xl max-h-[85vh] overflow-auto">
+        <h2 class="text-xl font-bold mb-4">自動排班預覽</h2>
+        <div id="shortageWarning" class="hidden mb-3"></div>
+        <div class="overflow-auto" style="max-height: 60vh;">
+            <table class="schedule-table w-full" id="previewTable"></table>
+        </div>
+        <div class="flex justify-end gap-3 mt-4">
+            <button onclick="closePreviewModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+            <button onclick="confirmAutoSchedule()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">確認套用</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const WEEKDAYS = ['日','一','二','三','四','五','六'];
+let currentYear = {{ year }};
+let currentMonth = {{ month }};
+let scheduleData = null;
+
+function prevMonth() {
+    currentMonth--;
+    if (currentMonth < 1) { currentMonth = 12; currentYear--; }
+    loadSchedule();
+}
+function nextMonth() {
+    currentMonth++;
+    if (currentMonth > 12) { currentMonth = 1; currentYear++; }
+    loadSchedule();
+}
+
+document.getElementById('locationFilter').addEventListener('change', loadSchedule);
+
+async function loadLocations() {
+    const res = await fetch('/api/locations');
+    const locs = await res.json();
+    const sel = document.getElementById('locationFilter');
+    const cur = '{{ location }}';
+    locs.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.name;
+        opt.textContent = l.name;
+        if (l.name === cur) opt.selected = true;
+        sel.appendChild(opt);
+    });
+}
+loadLocations();
+
+async function loadSchedule() {
+    const loc = document.getElementById('locationFilter').value;
+    document.getElementById('monthLabel').textContent = `${currentYear}年${currentMonth}月`;
+    const url = `/api/schedule?year=${currentYear}&month=${currentMonth}&location=${encodeURIComponent(loc)}`;
+    const res = await fetch(url);
+    scheduleData = await res.json();
+    renderSchedule();
+    // Update auto-schedule button state
+    const btn = document.getElementById('autoBtn');
+    if (isPastMonth()) {
+        btn.classList.add('opacity-50', 'cursor-not-allowed');
+        btn.classList.remove('hover:bg-green-700');
+    } else {
+        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+        btn.classList.add('hover:bg-green-700');
+    }
+}
+
+function renderSchedule() {
+    const { days_in_month, data } = scheduleData;
+
+    // Header
+    const headerRow = document.getElementById('headerRow');
+    let hhtml = '<th class="name-col">姓名</th><th>地點</th>';
+    for (let d = 1; d <= days_in_month; d++) {
+        const dt = new Date(currentYear, currentMonth - 1, d);
+        const wd = dt.getDay();
+        const isWeekend = wd === 0 || wd === 6;
+        hhtml += `<th class="${isWeekend ? 'weekend' : ''}" style="min-width:36px">
+            <div>${d}</div><div class="text-xs text-gray-400">${WEEKDAYS[wd]}</div>
+        </th>`;
+    }
+    hhtml += '<th>D</th><th>N</th><th>OFF</th>';
+    headerRow.innerHTML = hhtml;
+
+    // Body
+    const tbody = document.getElementById('scheduleBody');
+    tbody.innerHTML = data.map((row, idx) => {
+        const emp = row.employee;
+        let html = `<tr>`;
+        html += `<td class="name-col font-medium">${emp.name}</td>`;
+        html += `<td class="text-xs text-center"><span class="px-1.5 py-0.5 rounded ${emp.location === '雙和' ? 'bg-blue-100 text-blue-700' : emp.location === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${emp.location}</span></td>`;
+
+        let dCount = 0, nCount = 0, offCount = 0;
+        for (let d = 1; d <= days_in_month; d++) {
+            const shift = row.shifts[String(d)] || 'OFF';
+            const dt = new Date(currentYear, currentMonth - 1, d);
+            const isWeekend = dt.getDay() === 0 || dt.getDay() === 6;
+            const cls = shift === 'D' ? 'shift-d' : shift === 'N' ? 'shift-n' : 'shift-off';
+            html += `<td class="shift-cell ${cls} ${isWeekend ? 'weekend' : ''}" data-emp="${emp.id}" data-day="${d}" onclick="toggleShift(this)">${shift}</td>`;
+            if (shift === 'D') dCount++;
+            else if (shift === 'N') nCount++;
+            else offCount++;
+        }
+        html += `<td class="text-center stat-d">${dCount}</td>`;
+        html += `<td class="text-center stat-n">${nCount}</td>`;
+        html += `<td class="text-center text-gray-400">${offCount}</td>`;
+        html += '</tr>';
+        return html;
+    }).join('');
+
+    // Footer: daily counts
+    const foot = document.getElementById('scheduleFoot');
+    let fhtml = '<tr class="font-bold bg-gray-50"><td class="name-col">D班人數</td><td></td>';
+    for (let d = 1; d <= days_in_month; d++) {
+        const count = data.filter(r => r.shifts[String(d)] === 'D').length;
+        fhtml += `<td class="text-center stat-d">${count}</td>`;
+    }
+    fhtml += '<td colspan="3"></td></tr>';
+    fhtml += '<tr class="font-bold bg-gray-50"><td class="name-col">N班人數</td><td></td>';
+    for (let d = 1; d <= days_in_month; d++) {
+        const count = data.filter(r => r.shifts[String(d)] === 'N').length;
+        fhtml += `<td class="text-center stat-n">${count}</td>`;
+    }
+    fhtml += '<td colspan="3"></td></tr>';
+    foot.innerHTML = fhtml;
+}
+
+async function toggleShift(cell) {
+    const empId = cell.dataset.emp;
+    const day = parseInt(cell.dataset.day);
+    const current = cell.textContent.trim();
+    const next = current === 'D' ? 'N' : current === 'N' ? 'OFF' : 'D';
+
+    await fetch('/api/schedule', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+            employee_id: parseInt(empId),
+            year: currentYear,
+            month: currentMonth,
+            day: day,
+            shift: next,
+        })
+    });
+
+    // Update local data and re-render
+    const row = scheduleData.data.find(r => r.employee.id === parseInt(empId));
+    if (row) row.shifts[String(day)] = next;
+    renderSchedule();
+}
+
+// --- Auto Schedule ---
+let autoPreviewData = null;
+let autoLocations = [];
+
+function isPastMonth() {
+    const now = new Date();
+    return currentYear < now.getFullYear() || (currentYear === now.getFullYear() && currentMonth < now.getMonth() + 1);
+}
+
+async function showAutoModal() {
+    if (isPastMonth()) {
+        alert('無法對已過去的月份使用自動排班');
+        return;
+    }
+    const locRes = await fetch('/api/locations');
+    autoLocations = await locRes.json();
+    const reqRes = await fetch('/api/staffing-requirements');
+    const reqs = await reqRes.json();
+    const reqMap = {};
+    reqs.forEach(r => { reqMap[`${r.location}_${r.shift}`] = r.count; });
+
+    const div = document.getElementById('autoStaffing');
+    div.innerHTML = autoLocations.map(l => `
+        <div class="border rounded-lg p-3">
+            <div class="font-medium mb-2">${l.name}</div>
+            <div class="grid grid-cols-2 gap-2">
+                <div>
+                    <label class="text-xs text-gray-500">日班(D)人數</label>
+                    <input type="number" min="0" class="w-full border rounded px-2 py-1 text-sm auto-req"
+                        data-loc="${l.name}" data-shift="D" value="${reqMap[`${l.name}_D`] || 0}">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500">夜班(N)人數</label>
+                    <input type="number" min="0" class="w-full border rounded px-2 py-1 text-sm auto-req"
+                        data-loc="${l.name}" data-shift="N" value="${reqMap[`${l.name}_N`] || 0}">
+                </div>
+            </div>
+        </div>
+    `).join('');
+    document.getElementById('autoModal').classList.remove('hidden');
+}
+
+function closeAutoModal() {
+    document.getElementById('autoModal').classList.add('hidden');
+}
+
+async function runAutoSchedule() {
+    // Save staffing requirements first
+    const inputs = document.querySelectorAll('.auto-req');
+    const reqs = [];
+    inputs.forEach(inp => {
+        reqs.push({ location: inp.dataset.loc, shift: inp.dataset.shift, count: parseInt(inp.value) || 0 });
+    });
+    await fetch('/api/staffing-requirements', {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(reqs)
+    });
+
+    // Generate
+    const res = await fetch('/api/schedule/auto-generate', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ year: currentYear, month: currentMonth })
+    });
+    autoPreviewData = await res.json();
+    closeAutoModal();
+    showPreview();
+}
+
+function showPreview() {
+    const { data } = autoPreviewData;
+    const days = new Date(currentYear, currentMonth, 0).getDate();
+
+    let html = '<thead><tr><th class="name-col">姓名</th><th>地點</th>';
+    for (let d = 1; d <= days; d++) {
+        const dt = new Date(currentYear, currentMonth - 1, d);
+        const wd = dt.getDay();
+        html += `<th style="min-width:28px;font-size:11px" class="${wd===0||wd===6?'weekend':''}">${d}<br>${WEEKDAYS[wd]}</th>`;
+    }
+    html += '<th>D</th><th>N</th></tr></thead><tbody>';
+
+    data.forEach(row => {
+        const emp = row.employee;
+        let dC=0, nC=0;
+        html += `<tr><td class="name-col text-xs">${emp.name}</td><td class="text-xs">${emp.location}</td>`;
+        for (let d = 1; d <= days; d++) {
+            const s = row.shifts[String(d)] || 'OFF';
+            const cls = s==='D'?'shift-d':s==='N'?'shift-n':'shift-off';
+            const dt = new Date(currentYear, currentMonth - 1, d);
+            html += `<td class="${cls} ${dt.getDay()===0||dt.getDay()===6?'weekend':''}" style="text-align:center;font-size:11px">${s}</td>`;
+            if(s==='D') dC++; else if(s==='N') nC++;
+        }
+        html += `<td class="text-center stat-d text-xs">${dC}</td><td class="text-center stat-n text-xs">${nC}</td></tr>`;
+    });
+    html += '</tbody>';
+
+    document.getElementById('previewTable').innerHTML = html;
+
+    // Show shortage warnings
+    const warningDiv = document.getElementById('shortageWarning');
+    const shortages = autoPreviewData.shortages || [];
+    if (shortages.length > 0) {
+        // Group by location+shift, summarize days
+        const grouped = {};
+        shortages.forEach(s => {
+            const key = `${s.location} ${s.shift === 'D' ? '日班' : '夜班'}`;
+            if (!grouped[key]) grouped[key] = { days: [], totalShort: 0 };
+            grouped[key].days.push(s.day);
+            grouped[key].totalShort += s.short;
+        });
+        let whtml = '<div class="bg-red-50 border border-red-300 rounded-lg p-3">';
+        whtml += '<div class="font-bold text-red-700 mb-2">⚠ 人力不足警告</div>';
+        whtml += '<div class="space-y-1 text-sm text-red-600">';
+        for (const [key, info] of Object.entries(grouped)) {
+            const dayList = info.days.length > 10
+                ? info.days.slice(0, 10).join(', ') + `...等${info.days.length}天`
+                : info.days.join(', ');
+            whtml += `<div><span class="font-medium">${key}</span>：共 ${info.days.length} 天人力不足（缺 ${info.totalShort} 人次），日期：${dayList}</div>`;
+        }
+        whtml += '</div></div>';
+        warningDiv.innerHTML = whtml;
+        warningDiv.classList.remove('hidden');
+    } else {
+        warningDiv.classList.add('hidden');
+    }
+
+    document.getElementById('previewModal').classList.remove('hidden');
+}
+
+function closePreviewModal() {
+    document.getElementById('previewModal').classList.add('hidden');
+}
+
+async function confirmAutoSchedule() {
+    const payload = {
+        year: currentYear,
+        month: currentMonth,
+        data: autoPreviewData.data.map(row => ({
+            employee_id: row.employee.id,
+            shifts: row.shifts,
+        }))
+    };
+    await fetch('/api/schedule/auto-confirm', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(payload)
+    });
+    closePreviewModal();
+    loadSchedule();
+}
+
+loadSchedule();
+</script>
+{% endblock %}
