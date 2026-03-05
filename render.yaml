@@ -5,9 +5,5 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
     envVars:
-      - key: DATABASE_PATH
-        value: /opt/render/project/data/salary.db
-    disk:
-      name: data
-      mountPath: /opt/render/project/data
-      sizeGB: 1
+      - key: DATABASE_URL
+        value: mysql+pymysql://A999:1023@122.100.99.161:43306/bulbul_schedule?charset=utf8mb4

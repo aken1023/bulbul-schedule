@@ -7,9 +7,11 @@ from models import db, Employee, Schedule, SalaryRecord, Location, EmployeePrefe
 from export import export_salary_slip
 
 app = Flask(__name__)
-DB_PATH = os.environ.get('DATABASE_PATH', os.path.join(os.path.dirname(__file__), 'instance', 'salary.db'))
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{DB_PATH}'
+DATABASE_URI = os.environ.get(
+    'DATABASE_URL',
+    'mysql+pymysql://A999:1023@122.100.99.161:43306/bulbul_schedule?charset=utf8mb4'
+)
+app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = 'dev-secret-key'
 
