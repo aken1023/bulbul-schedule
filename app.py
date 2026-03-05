@@ -25,7 +25,8 @@ with app.app_context():
             db.session.add(Location(name=loc_name))
     db.session.commit()
 
-EXPORT_DIR = os.path.join(os.path.dirname(__file__), 'exports')
+import tempfile
+EXPORT_DIR = os.path.join(tempfile.gettempdir(), 'exports')
 os.makedirs(EXPORT_DIR, exist_ok=True)
 
 
