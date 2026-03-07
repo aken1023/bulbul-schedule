@@ -25,9 +25,13 @@
                     <input id="empCode" type="text" class="w-full border rounded-lg px-3 py-2">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700">服務地點</label>
+                    <label class="block text-sm font-medium text-gray-700">主要服務地點</label>
                     <select id="empLocation" class="w-full border rounded-lg px-3 py-2">
                     </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">可服務院區（可多選）</label>
+                    <div id="empAllowedLocs" class="flex flex-wrap gap-2 mt-1"></div>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700">到職日</label>
@@ -299,12 +303,23 @@ function renderTable() {
     }).join('');
 }
 
+function renderAllowedLocs(checkedLocs) {
+    const div = document.getElementById('empAllowedLocs');
+    div.innerHTML = locations.map(l => {
+        const checked = checkedLocs.includes(l.name) ? 'checked' : '';
+        return `<label class="flex items-center gap-1 bg-gray-100 rounded px-2 py-1 text-sm cursor-pointer">
+            <input type="checkbox" class="emp-loc-cb" value="${l.name}" ${checked}> ${l.name}
+        </label>`;
+    }).join('');
+}
+
 function showAddForm() {
     document.getElementById('formTitle').textContent = '新增員工';
     document.getElementById('empId').value = '';
     document.getElementById('empName').value = '';
     document.getElementById('empCode').value = '';
     document.getElementById('empLocation').value = '雙和';
+    renderAllowedLocs([]);
     document.getElementById('empStartDate').value = '';
     document.getElementById('empTitle').value = '照服員';
     document.getElementById('empBank').value = '';
@@ -314,7 +329,7 @@ function showAddForm() {
     document.getElementById('formModal').classList.remove('hidden');
 }
 
-function editEmployee(id) {
+async function editEmployee(id) {
     const e = employees.find(x => x.id === id);
     if (!e) return;
     document.getElementById('formTitle').textContent = '編輯員工';
@@ -322,6 +337,11 @@ function editEmployee(id) {
     document.getElementById('empName').value = e.name;
     document.getElementById('empCode').value = e.emp_code;
     document.getElementById('empLocation').value = e.location;
+    // Load allowed locations from preferences
+    const pref = allPreferences[e.id];
+    const allowed = pref && pref.allowed_locations && pref.allowed_locations.length > 0
+        ? pref.allowed_locations : [e.location];
+    renderAllowedLocs(allowed);
     document.getElementById('empStartDate').value = e.start_date;
     document.getElementById('empTitle').value = e.job_title;
     document.getElementById('empBank').value = e.bank_account;
@@ -402,14 +422,43 @@ document.getElementById('empForm').addEventListener('submit', async (e) => {
         day_rate: document.getElementById('empDayRate').value,
         night_rate: document.getElementById('empNightRate').value,
     };
+    const allowedLocs = [...document.querySelectorAll('.emp-loc-cb:checked')].map(cb => cb.value);
     if (id) {
         await fetch(`/api/employees/${id}`, {
             method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
         });
+        // Save allowed locations to preferences
+        const prefRes = await fetch(`/api/employee-preferences/${id}`);
+        const pref = await prefRes.json();
+        await fetch(`/api/employee-preferences/${id}`, {
+            method: 'PUT', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({
+                allowed_locations: allowedLocs,
+                allowed_shifts: pref.allowed_shifts || 'both',
+                min_days: pref.min_days || 0,
+                max_days: pref.max_days || 31,
+                schedule_mode: pref.schedule_mode || 'none',
+                work_weekdays: pref.work_weekdays || [],
+                pattern_work: pref.pattern_work || 5,
+                pattern_off: pref.pattern_off || 2,
+            })
+        });
     } else {
-        await fetch('/api/employees', {
+        const res = await fetch('/api/employees', {
             method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(data)
         });
+        // Save allowed locations for new employee
+        if (res.ok && allowedLocs.length > 0) {
+            const newEmp = await res.json();
+            await fetch(`/api/employee-preferences/${newEmp.id}`, {
+                method: 'PUT', headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                    allowed_locations: allowedLocs,
+                    allowed_shifts: 'both', min_days: 0, max_days: 31,
+                    schedule_mode: 'none', work_weekdays: [], pattern_work: 5, pattern_off: 2,
+                })
+            });
+        }
     }
     closeForm();
     loadEmployees();
