@@ -3,7 +3,7 @@ import json
 import calendar
 from datetime import date, datetime
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
-from models import db, Employee, Schedule, SalaryRecord, Location, EmployeePreference, EmployeeTimeOff, StaffingRequirement
+from models import db, Employee, Schedule, SalaryRecord, Location, EmployeePreference, EmployeeTimeOff, StaffingRequirement, EmployeeRateHistory
 from export import export_salary_slip
 
 app = Flask(__name__)
@@ -37,6 +37,18 @@ def _parse_date(s):
         return datetime.strptime(s, '%Y-%m-%d').date()
     except ValueError:
         return None
+
+
+def _get_effective_rate(emp, year, month):
+    """取得員工在指定年月適用的日班/夜班費率（依生效日期查找最近一筆）"""
+    target = date(year, month, 1)
+    rate = EmployeeRateHistory.query.filter(
+        EmployeeRateHistory.employee_id == emp.id,
+        EmployeeRateHistory.effective_date <= target
+    ).order_by(EmployeeRateHistory.effective_date.desc()).first()
+    if rate:
+        return rate.day_rate, rate.night_rate
+    return emp.day_rate, emp.night_rate
 
 
 # --- Pages ---
@@ -185,6 +197,46 @@ def api_update_employee(eid):
 def api_delete_employee(eid):
     emp = Employee.query.get_or_404(eid)
     emp.is_active = False
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# --- API: Employee Rate History (薪資費率歷史) ---
+
+@app.route('/api/rate-history/<int:eid>', methods=['GET'])
+def api_get_rate_history(eid):
+    Employee.query.get_or_404(eid)
+    records = EmployeeRateHistory.query.filter_by(employee_id=eid)\
+        .order_by(EmployeeRateHistory.effective_date).all()
+    return jsonify([r.to_dict() for r in records])
+
+
+@app.route('/api/rate-history/<int:eid>', methods=['POST'])
+def api_add_rate_history(eid):
+    Employee.query.get_or_404(eid)
+    data = request.json
+    d = _parse_date(data.get('effective_date'))
+    if not d:
+        return jsonify({'error': '日期格式錯誤'}), 400
+    existing = EmployeeRateHistory.query.filter_by(employee_id=eid, effective_date=d).first()
+    if existing:
+        existing.day_rate = int(data['day_rate'])
+        existing.night_rate = int(data['night_rate'])
+        db.session.commit()
+        return jsonify(existing.to_dict())
+    r = EmployeeRateHistory(
+        employee_id=eid, effective_date=d,
+        day_rate=int(data['day_rate']), night_rate=int(data['night_rate'])
+    )
+    db.session.add(r)
+    db.session.commit()
+    return jsonify(r.to_dict()), 201
+
+
+@app.route('/api/rate-history/<int:eid>/<int:rid>', methods=['DELETE'])
+def api_delete_rate_history(eid, rid):
+    r = EmployeeRateHistory.query.get_or_404(rid)
+    db.session.delete(r)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -415,11 +467,10 @@ def api_calculate_salary():
             note = rec.note or ''
             payment_date = rec.payment_date.isoformat() if rec.payment_date else None
         else:
-            # No saved record, auto-calc from schedule + employee defaults
+            # No saved record, auto-calc from schedule + effective rate
             day_count = sched_day_count
             night_count = sched_night_count
-            day_rate = emp.day_rate
-            night_rate = emp.night_rate
+            day_rate, night_rate = _get_effective_rate(emp, year, month)
 
         off_count = days_in_month - sched_day_count - sched_night_count
         day_total = day_count * day_rate
@@ -515,8 +566,8 @@ def api_export_salary(emp_id):
         'month': month,
         'day_shifts': day_count,
         'night_shifts': night_count,
-        'day_rate': rec.day_rate if rec else emp.day_rate,
-        'night_rate': rec.night_rate if rec else emp.night_rate,
+        'day_rate': rec.day_rate if rec else _get_effective_rate(emp, year, month)[0],
+        'night_rate': rec.night_rate if rec else _get_effective_rate(emp, year, month)[1],
         'extra_earnings': json.loads(rec.extra_earnings) if rec and rec.extra_earnings else [],
         'advance_pay': rec.advance_pay if rec else 0,
         'health_insurance': rec.health_insurance if rec else 0,
@@ -564,11 +615,12 @@ def api_export_all():
             employee_id=emp.id, year=year, month=month
         ).first()
 
+        eff_day, eff_night = _get_effective_rate(emp, year, month)
         salary_data = {
             'year': year, 'month': month,
             'day_shifts': day_count, 'night_shifts': night_count,
-            'day_rate': rec.day_rate if rec else emp.day_rate,
-            'night_rate': rec.night_rate if rec else emp.night_rate,
+            'day_rate': rec.day_rate if rec else eff_day,
+            'night_rate': rec.night_rate if rec else eff_night,
             'extra_earnings': json.loads(rec.extra_earnings) if rec and rec.extra_earnings else [],
             'advance_pay': rec.advance_pay if rec else 0,
             'health_insurance': rec.health_insurance if rec else 0,
@@ -762,8 +814,7 @@ def api_stats():
             deduct = rec.advance_pay + rec.health_insurance + rec.welfare_fund + rec.leave_deduct + rec.transfer_fee
             deduct += sum(d['amount'] for d in (json.loads(rec.extra_deductions) if rec.extra_deductions else []))
         else:
-            day_rate = emp.day_rate
-            night_rate = emp.night_rate
+            day_rate, night_rate = _get_effective_rate(emp, year, month)
             d_pay_count = d_count
             n_pay_count = n_count
             extra = 0

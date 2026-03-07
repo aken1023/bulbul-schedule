@@ -53,6 +53,28 @@
                     <input id="empNightRate" type="number" value="3168" class="w-full border rounded-lg px-3 py-2">
                 </div>
             </div>
+            <!-- 薪資費率歷史 (編輯時才顯示) -->
+            <div id="rateHistorySection" class="hidden border-t pt-3 mt-3">
+                <h3 class="font-bold text-gray-700 mb-2">薪資費率歷史</h3>
+                <p class="text-xs text-gray-400 mb-2">設定自某日起適用的費率，薪資計算時會自動依月份查找適用費率</p>
+                <div id="rateHistoryList" class="space-y-2 mb-3 max-h-40 overflow-auto"></div>
+                <div class="flex gap-2 items-end">
+                    <div>
+                        <label class="block text-xs text-gray-500">生效日期</label>
+                        <input id="newRateDate" type="date" class="border rounded px-2 py-1 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500">日班單價</label>
+                        <input id="newRateDay" type="number" class="border rounded px-2 py-1 text-sm w-24">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500">夜班單價</label>
+                        <input id="newRateNight" type="number" class="border rounded px-2 py-1 text-sm w-24">
+                    </div>
+                    <button type="button" onclick="addRateHistory()" class="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700">新增</button>
+                </div>
+            </div>
+
             <div class="flex justify-end gap-3 mt-4">
                 <button type="button" onclick="closeForm()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
                 <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">儲存</button>
@@ -288,6 +310,7 @@ function showAddForm() {
     document.getElementById('empBank').value = '';
     document.getElementById('empDayRate').value = '3068';
     document.getElementById('empNightRate').value = '3168';
+    document.getElementById('rateHistorySection').classList.add('hidden');
     document.getElementById('formModal').classList.remove('hidden');
 }
 
@@ -304,7 +327,55 @@ function editEmployee(id) {
     document.getElementById('empBank').value = e.bank_account;
     document.getElementById('empDayRate').value = e.day_rate;
     document.getElementById('empNightRate').value = e.night_rate;
+    document.getElementById('rateHistorySection').classList.remove('hidden');
+    loadRateHistory(e.id);
     document.getElementById('formModal').classList.remove('hidden');
+}
+
+// --- Rate History (薪資費率歷史) ---
+async function loadRateHistory(empId) {
+    const res = await fetch(`/api/rate-history/${empId}`);
+    const data = await res.json();
+    const list = document.getElementById('rateHistoryList');
+    if (data.length === 0) {
+        list.innerHTML = '<div class="text-xs text-gray-400">尚無費率歷史，將使用員工預設費率</div>';
+    } else {
+        list.innerHTML = data.map(r => `
+            <div class="flex items-center justify-between bg-gray-50 rounded px-3 py-2 text-sm">
+                <span>自 <strong>${r.effective_date}</strong> 起：日班 <strong>${r.day_rate.toLocaleString()}</strong> / 夜班 <strong>${r.night_rate.toLocaleString()}</strong></span>
+                <button onclick="deleteRateHistory(${empId}, ${r.id})" class="text-red-500 hover:underline text-xs">刪除</button>
+            </div>
+        `).join('');
+    }
+    // Pre-fill new rate inputs with current employee rates
+    const emp = employees.find(e => e.id === empId);
+    if (emp) {
+        document.getElementById('newRateDay').value = emp.day_rate;
+        document.getElementById('newRateNight').value = emp.night_rate;
+    }
+}
+
+async function addRateHistory() {
+    const empId = document.getElementById('empId').value;
+    if (!empId) return;
+    const effDate = document.getElementById('newRateDate').value;
+    const dayRate = document.getElementById('newRateDay').value;
+    const nightRate = document.getElementById('newRateNight').value;
+    if (!effDate || !dayRate || !nightRate) {
+        alert('請填寫完整的生效日期和費率');
+        return;
+    }
+    await fetch(`/api/rate-history/${empId}`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ effective_date: effDate, day_rate: parseInt(dayRate), night_rate: parseInt(nightRate) })
+    });
+    loadRateHistory(parseInt(empId));
+}
+
+async function deleteRateHistory(empId, rid) {
+    if (!confirm('確定要刪除此費率記錄？')) return;
+    await fetch(`/api/rate-history/${empId}/${rid}`, { method: 'DELETE' });
+    loadRateHistory(empId);
 }
 
 function closeForm() {

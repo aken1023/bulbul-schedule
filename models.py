@@ -144,6 +144,29 @@ class EmployeeTimeOff(db.Model):
         }
 
 
+class EmployeeRateHistory(db.Model):
+    """員工薪資費率歷史：自某日起適用的日班/夜班費率"""
+    __tablename__ = 'employee_rate_history'
+    id = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False)
+    effective_date = db.Column(db.Date, nullable=False)  # 生效日期
+    day_rate = db.Column(db.Integer, nullable=False)
+    night_rate = db.Column(db.Integer, nullable=False)
+
+    employee = db.relationship('Employee', backref=db.backref('rate_history', lazy='dynamic'))
+
+    __table_args__ = (db.UniqueConstraint('employee_id', 'effective_date'),)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'employee_id': self.employee_id,
+            'effective_date': self.effective_date.isoformat(),
+            'day_rate': self.day_rate,
+            'night_rate': self.night_rate,
+        }
+
+
 class StaffingRequirement(db.Model):
     __tablename__ = 'staffing_requirements'
     id = db.Column(db.Integer, primary_key=True)
