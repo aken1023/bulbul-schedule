@@ -5,3 +5,5 @@ exports/
 *.xlsx
 *.png
 .claude/
+
+.vercel

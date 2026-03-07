@@ -122,10 +122,13 @@ async function loadSchedule() {
 
 function renderSchedule() {
     const { days_in_month, data } = scheduleData;
+    const loc = document.getElementById('locationFilter').value;
+    const showLoc = !loc; // 選了單一醫院就隱藏地點欄
 
     // Header
     const headerRow = document.getElementById('headerRow');
-    let hhtml = '<th class="name-col">姓名</th><th>地點</th>';
+    let hhtml = '<th class="name-col">姓名</th>';
+    if (showLoc) hhtml += '<th>地點</th>';
     for (let d = 1; d <= days_in_month; d++) {
         const dt = new Date(currentYear, currentMonth - 1, d);
         const wd = dt.getDay();
@@ -143,7 +146,7 @@ function renderSchedule() {
         const emp = row.employee;
         let html = `<tr>`;
         html += `<td class="name-col font-medium">${emp.name}</td>`;
-        html += `<td class="text-xs text-center"><span class="px-1.5 py-0.5 rounded ${emp.location === '雙和' ? 'bg-blue-100 text-blue-700' : emp.location === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${emp.location}</span></td>`;
+        if (showLoc) html += `<td class="text-xs text-center"><span class="px-1.5 py-0.5 rounded ${emp.location === '雙和' ? 'bg-blue-100 text-blue-700' : emp.location === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${emp.location}</span></td>`;
 
         let dCount = 0, nCount = 0, offCount = 0;
         for (let d = 1; d <= days_in_month; d++) {
@@ -165,13 +168,15 @@ function renderSchedule() {
 
     // Footer: daily counts
     const foot = document.getElementById('scheduleFoot');
-    let fhtml = '<tr class="font-bold bg-gray-50"><td class="name-col">D班人數</td><td></td>';
+    let fhtml = '<tr class="font-bold bg-gray-50"><td class="name-col">D班人數</td>';
+    if (showLoc) fhtml += '<td></td>';
     for (let d = 1; d <= days_in_month; d++) {
         const count = data.filter(r => r.shifts[String(d)] === 'D').length;
         fhtml += `<td class="text-center stat-d">${count}</td>`;
     }
     fhtml += '<td colspan="3"></td></tr>';
-    fhtml += '<tr class="font-bold bg-gray-50"><td class="name-col">N班人數</td><td></td>';
+    fhtml += '<tr class="font-bold bg-gray-50"><td class="name-col">N班人數</td>';
+    if (showLoc) fhtml += '<td></td>';
     for (let d = 1; d <= days_in_month; d++) {
         const count = data.filter(r => r.shifts[String(d)] === 'N').length;
         fhtml += `<td class="text-center stat-n">${count}</td>`;
@@ -282,20 +287,20 @@ function showPreview() {
         const wd = dt.getDay();
         html += `<th style="min-width:28px;font-size:11px" class="${wd===0||wd===6?'weekend':''}">${d}<br>${WEEKDAYS[wd]}</th>`;
     }
-    html += '<th>D</th><th>N</th></tr></thead><tbody>';
+    html += '<th>D</th><th>N</th><th>OFF</th></tr></thead><tbody>';
 
     data.forEach(row => {
         const emp = row.employee;
-        let dC=0, nC=0;
+        let dC=0, nC=0, offC=0;
         html += `<tr><td class="name-col text-xs">${emp.name}</td><td class="text-xs">${emp.location}</td>`;
         for (let d = 1; d <= days; d++) {
             const s = row.shifts[String(d)] || 'OFF';
             const cls = s==='D'?'shift-d':s==='N'?'shift-n':'shift-off';
             const dt = new Date(currentYear, currentMonth - 1, d);
             html += `<td class="${cls} ${dt.getDay()===0||dt.getDay()===6?'weekend':''}" style="text-align:center;font-size:11px">${s}</td>`;
-            if(s==='D') dC++; else if(s==='N') nC++;
+            if(s==='D') dC++; else if(s==='N') nC++; else offC++;
         }
-        html += `<td class="text-center stat-d text-xs">${dC}</td><td class="text-center stat-n text-xs">${nC}</td></tr>`;
+        html += `<td class="text-center stat-d text-xs">${dC}</td><td class="text-center stat-n text-xs">${nC}</td><td class="text-center text-gray-400 text-xs">${offC}</td></tr>`;
     });
     html += '</tbody>';
 

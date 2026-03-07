@@ -124,6 +124,8 @@ function renderSalary() {
                     <span class="font-bold text-lg">${emp.name}</span>
                     <span class="text-sm text-gray-400">${emp.emp_code}</span>
                     <span class="px-2 py-0.5 rounded text-xs font-medium ${emp.location === '雙和' ? 'bg-blue-100 text-blue-700' : emp.location === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${emp.location}</span>
+                    ${emp.start_date ? `<span class="text-xs text-gray-400">到職：${emp.start_date}</span>` : ''}
+                    <span class="text-xs text-gray-500">日班 ${fmt(s.day_rate)}/夜班 ${fmt(s.night_rate)}</span>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="openEdit(${idx})" class="text-sm px-3 py-1.5 border rounded-lg hover:bg-gray-50">編輯加扣項</button>

@@ -171,6 +171,7 @@
 <script>
 let employees = [];
 let locations = [];
+let allPreferences = {};
 
 async function loadLocations() {
     const res = await fetch('/api/locations');
@@ -180,8 +181,14 @@ async function loadLocations() {
 }
 
 async function loadEmployees() {
-    const res = await fetch('/api/employees');
-    employees = await res.json();
+    const [empRes, prefRes] = await Promise.all([
+        fetch('/api/employees'),
+        fetch('/api/employee-preferences')
+    ]);
+    employees = await empRes.json();
+    const prefs = await prefRes.json();
+    allPreferences = {};
+    prefs.forEach(p => { allPreferences[p.employee_id] = p; });
     renderTable();
 }
 
@@ -238,13 +245,24 @@ async function deleteLocation(id) {
     renderLocList();
 }
 
+function locBadge(name, isPrimary) {
+    const cls = name === '雙和' ? 'bg-blue-100 text-blue-700' : name === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700';
+    const border = isPrimary ? 'ring-1 ring-offset-1 ring-gray-400' : 'opacity-70';
+    return `<span class="px-2 py-0.5 rounded text-xs font-medium ${cls} ${border}">${name}</span>`;
+}
+
 function renderTable() {
     const tbody = document.getElementById('empTable');
-    tbody.innerHTML = employees.map(e => `
+    tbody.innerHTML = employees.map(e => {
+        const pref = allPreferences[e.id];
+        const allowed = pref && pref.allowed_locations && pref.allowed_locations.length > 0
+            ? pref.allowed_locations : [e.location];
+        const locHtml = allowed.map(l => locBadge(l, l === e.location)).join(' ');
+        return `
         <tr class="border-b hover:bg-gray-50">
             <td class="px-4 py-3 font-medium">${e.name}</td>
             <td class="px-4 py-3">${e.emp_code}</td>
-            <td class="px-4 py-3"><span class="px-2 py-0.5 rounded text-xs font-medium ${e.location === '雙和' ? 'bg-blue-100 text-blue-700' : e.location === '北醫' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}">${e.location}</span></td>
+            <td class="px-4 py-3">${locHtml}</td>
             <td class="px-4 py-3">${e.start_date}</td>
             <td class="px-4 py-3">${e.job_title}</td>
             <td class="px-4 py-3 text-right">${e.day_rate.toLocaleString()}</td>
@@ -255,8 +273,8 @@ function renderTable() {
                 <button onclick="editEmployee(${e.id})" class="text-indigo-600 hover:underline mr-2">編輯</button>
                 <button onclick="deleteEmployee(${e.id})" class="text-red-500 hover:underline">刪除</button>
             </td>
-        </tr>
-    `).join('');
+        </tr>`;
+    }).join('');
 }
 
 function showAddForm() {
