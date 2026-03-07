@@ -9,6 +9,12 @@
     .schedule-table thead .name-col { z-index: 15; }
     .stat-d { color: #1e40af; font-weight: 600; }
     .stat-n { color: #92400e; font-weight: 600; }
+    .stat-col { position: sticky; background: #f9fafb; z-index: 5; }
+    .stat-col-d { right: 72px; }
+    .stat-col-n { right: 36px; }
+    .stat-col-off { right: 0; }
+    .schedule-table thead .stat-col { z-index: 15; background: #f3f4f6; }
+    .schedule-table tfoot .stat-col { background: #f9fafb; }
 </style>
 {% endblock %}
 
@@ -137,7 +143,7 @@ function renderSchedule() {
             <div>${d}</div><div class="text-xs text-gray-400">${WEEKDAYS[wd]}</div>
         </th>`;
     }
-    hhtml += '<th>D</th><th>N</th><th>OFF</th>';
+    hhtml += '<th class="stat-col stat-col-d">D</th><th class="stat-col stat-col-n">N</th><th class="stat-col stat-col-off">OFF</th>';
     headerRow.innerHTML = hhtml;
 
     // Body
@@ -159,9 +165,9 @@ function renderSchedule() {
             else if (shift === 'N') nCount++;
             else offCount++;
         }
-        html += `<td class="text-center stat-d">${dCount}</td>`;
-        html += `<td class="text-center stat-n">${nCount}</td>`;
-        html += `<td class="text-center text-gray-400">${offCount}</td>`;
+        html += `<td class="text-center stat-d stat-col stat-col-d">${dCount}</td>`;
+        html += `<td class="text-center stat-n stat-col stat-col-n">${nCount}</td>`;
+        html += `<td class="text-center text-gray-400 stat-col stat-col-off">${offCount}</td>`;
         html += '</tr>';
         return html;
     }).join('');
@@ -174,14 +180,14 @@ function renderSchedule() {
         const count = data.filter(r => r.shifts[String(d)] === 'D').length;
         fhtml += `<td class="text-center stat-d">${count}</td>`;
     }
-    fhtml += '<td colspan="3"></td></tr>';
+    fhtml += '<td class="stat-col stat-col-d"></td><td class="stat-col stat-col-n"></td><td class="stat-col stat-col-off"></td></tr>';
     fhtml += '<tr class="font-bold bg-gray-50"><td class="name-col">N班人數</td>';
     if (showLoc) fhtml += '<td></td>';
     for (let d = 1; d <= days_in_month; d++) {
         const count = data.filter(r => r.shifts[String(d)] === 'N').length;
         fhtml += `<td class="text-center stat-n">${count}</td>`;
     }
-    fhtml += '<td colspan="3"></td></tr>';
+    fhtml += '<td class="stat-col stat-col-d"></td><td class="stat-col stat-col-n"></td><td class="stat-col stat-col-off"></td></tr>';
     foot.innerHTML = fhtml;
 }
 
