@@ -561,13 +561,14 @@ def api_export_salary(emp_id):
         employee_id=emp.id, year=year, month=month
     ).first()
 
+    eff_day, eff_night = _get_effective_rate(emp, year, month)
     salary_data = {
         'year': year,
         'month': month,
         'day_shifts': day_count,
         'night_shifts': night_count,
-        'day_rate': rec.day_rate if rec else _get_effective_rate(emp, year, month)[0],
-        'night_rate': rec.night_rate if rec else _get_effective_rate(emp, year, month)[1],
+        'day_rate': rec.day_rate if rec else eff_day,
+        'night_rate': rec.night_rate if rec else eff_night,
         'extra_earnings': json.loads(rec.extra_earnings) if rec and rec.extra_earnings else [],
         'advance_pay': rec.advance_pay if rec else 0,
         'health_insurance': rec.health_insurance if rec else 0,
