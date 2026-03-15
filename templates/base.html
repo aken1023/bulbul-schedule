@@ -26,6 +26,8 @@
             <a href="/schedule" class="px-3 py-1.5 rounded text-sm font-medium {% if '/schedule' in request.path %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">排班表</a>
             <a href="/salary" class="px-3 py-1.5 rounded text-sm font-medium {% if '/salary' in request.path %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">薪資計算</a>
             <a href="/stats" class="px-3 py-1.5 rounded text-sm font-medium {% if '/stats' in request.path %}nav-active{% else %}text-gray-600 hover:bg-gray-100{% endif %}">統計圖表</a>
+            <div class="flex-1"></div>
+            <a href="/logout" class="px-3 py-1.5 rounded text-sm font-medium text-gray-400 hover:text-red-500 hover:bg-red-50 transition">登出</a>
         </div>
     </nav>
     <main class="max-w-7xl mx-auto px-4 py-6">

@@ -3,7 +3,7 @@ import re
 import json
 import calendar
 from datetime import date, datetime
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session
 from models import db, Employee, Schedule, SalaryRecord, Location, EmployeePreference, EmployeeTimeOff, StaffingRequirement, EmployeeRateHistory
 from export import export_salary_slip
 
@@ -14,9 +14,21 @@ DATABASE_URI = os.environ.get(
 )
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URI
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['SECRET_KEY'] = 'dev-secret-key'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'bulbul-secret-2026')
+APP_PASSWORD = os.environ.get('APP_PASSWORD', '0019')
 
 db.init_app(app)
+
+
+@app.before_request
+def require_login():
+    allowed = ('/login', '/static/')
+    if any(request.path.startswith(p) for p in allowed):
+        return
+    if not session.get('logged_in'):
+        if request.is_json or request.path.startswith('/api/'):
+            return jsonify({'error': '請先登入'}), 401
+        return redirect(url_for('login_page'))
 
 with app.app_context():
     db.create_all()
@@ -201,6 +213,28 @@ def _parse_schedule_sheet(ws, employees_by_name):
         'matched': matched,
         'unmatched': unmatched,
     }
+
+
+# --- Auth ---
+
+@app.route('/login', methods=['GET', 'POST'])
+def login_page():
+    if session.get('logged_in'):
+        return redirect('/')
+    error = ''
+    if request.method == 'POST':
+        pwd = request.form.get('password', '')
+        if pwd == APP_PASSWORD:
+            session['logged_in'] = True
+            return redirect('/')
+        error = '密碼錯誤，請重新輸入'
+    return render_template('login.html', error=error)
+
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect(url_for('login_page'))
 
 
 # --- Pages ---
