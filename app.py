@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import calendar
 from datetime import date, datetime
@@ -49,6 +50,157 @@ def _get_effective_rate(emp, year, month):
     if rate:
         return rate.day_rate, rate.night_rate
     return emp.day_rate, emp.night_rate
+
+
+def _normalize_shift(val):
+    """將 Excel 班別值正規化為 D / N / OFF"""
+    if val is None:
+        return 'OFF'
+    s = str(val).strip().upper()
+    if not s or s == 'OFF':
+        return 'OFF'
+    if s in ('D', 'D1', 'D2', '6HR', '2HR'):
+        return 'D'
+    if s.startswith('D') and len(s) <= 3:
+        return 'D'
+    if s in ('N', 'N1', 'N2'):
+        return 'N'
+    if s.startswith('N') and len(s) <= 3:
+        return 'N'
+    # 含中文或其他非班別文字 → OFF
+    return 'OFF'
+
+
+def _extract_roc_year_month(ws):
+    """掃描前 5 列找 '115年02月' 格式，回傳 (西元年, 月)"""
+    for row in ws.iter_rows(min_row=1, max_row=6, max_col=15):
+        for cell in row:
+            if cell.value and isinstance(cell.value, str):
+                m = re.search(r'(\d{2,3})\s*年\s*(\d{1,2})\s*月', cell.value)
+                if m:
+                    return int(m.group(1)) + 1911, int(m.group(2))
+    return None, None
+
+
+def _find_date_row(ws):
+    """找到包含連續 1,2,3... 的列，回傳 (row_index, start_col)，皆為 1-based"""
+    for row in ws.iter_rows(min_row=1, max_row=10):
+        cells = list(row)
+        for i, cell in enumerate(cells):
+            if cell.value == 1:
+                count = 0
+                for j in range(min(31, len(cells) - i)):
+                    if cells[i + j].value == j + 1:
+                        count += 1
+                    else:
+                        break
+                if count >= 20:  # 至少 20 天 (可能有些月份只到 28)
+                    return cell.row, cell.column
+    return None, None
+
+
+def _parse_schedule_sheet(ws, employees_by_name):
+    """解析單一 sheet 的排班資料"""
+    year, month = _extract_roc_year_month(ws)
+    date_row, date_start_col = _find_date_row(ws)
+
+    if date_row is None or year is None:
+        return None
+
+    # 計算天數
+    _, days_in_month = calendar.monthrange(year, month)
+    date_end_col = date_start_col + days_in_month - 1
+
+    matched = []
+    unmatched = []
+
+    # 先找出名稱所在的欄位（找到第一個匹配員工名的欄位）
+    name_col = None
+    for r in range(date_row + 1, ws.max_row + 1):
+        for c in range(1, date_start_col):
+            val = ws.cell(row=r, column=c).value
+            if val and isinstance(val, str) and val.strip() in employees_by_name:
+                name_col = c
+                break
+        if name_col:
+            break
+    if name_col is None:
+        return None
+
+    # 找出所有「看起來像人名」的列（含已匹配和未匹配的），用來做邊界劃分
+    all_name_rows = []  # [(row_index, name_or_None)]  name_or_None = matched name, else None
+    for r in range(date_row + 1, ws.max_row + 1):
+        val = ws.cell(row=r, column=name_col).value
+        if val and isinstance(val, str):
+            candidate = val.strip()
+            if candidate in employees_by_name:
+                all_name_rows.append((r, candidate))
+            elif (len(candidate) >= 2 and len(candidate) <= 5
+                  and not re.match(r'^[\dDN]', candidate)
+                  and not any(kw in candidate for kw in ['內部', '資料', '禁止',
+                              '員編', '洗頭', '班別', '天數', '單價', '合計', '總計'])):
+                # 未匹配的人名，仍做為邊界
+                all_name_rows.append((r, None))
+
+    # 對每個已匹配員工，從名稱列開始往下讀取，合併多列班別（如跨院班表）
+    processed_names = set()
+    for idx, (name_row, name) in enumerate(all_name_rows):
+        if name is None or name in processed_names:
+            continue
+        processed_names.add(name)
+
+        # 決定要讀到哪一列（到下一個人名列的前一列，或最多往下 5 列）
+        if idx + 1 < len(all_name_rows):
+            end_row = all_name_rows[idx + 1][0]
+        else:
+            end_row = min(name_row + 5, ws.max_row + 1)
+
+        # 讀取班別，合併多列（OFF 的格子用後續列覆蓋）
+        shifts = {}
+        for d in range(1, days_in_month + 1):
+            col = date_start_col + d - 1
+            shift = 'OFF'
+            for r in range(name_row, end_row):
+                val = ws.cell(row=r, column=col).value
+                normalized = _normalize_shift(val)
+                if normalized != 'OFF':
+                    shift = normalized
+                    break
+            shifts[str(d)] = shift
+
+        emp = employees_by_name[name]
+        matched.append({
+            'employee': emp.to_dict(),
+            'shifts': shifts,
+        })
+
+    # 找出 sheet 中有出現但沒匹配到的名字
+    for r in range(date_row + 1, ws.max_row + 1):
+        for c in [name_col]:
+            val = ws.cell(row=r, column=c).value
+            if val and isinstance(val, str):
+                candidate = val.strip()
+                if (candidate and len(candidate) >= 2 and len(candidate) <= 5
+                        and candidate not in employees_by_name
+                        and candidate not in unmatched
+                        and candidate.upper() not in ('OFF', 'D', 'N')
+                        and not re.match(r'^[DN]\d*$', candidate, re.IGNORECASE)
+                        and not re.match(r'^\d', candidate)
+                        and not any(kw in candidate for kw in ['內部', '資料', '禁止', '翻印', '公布',
+                                                                '員編', '登錄', '洗頭', '班別', '天數',
+                                                                '單價', '合計', '總計', '休假', '新人',
+                                                                '正常', '環介', '何信', '雙和', '北醫',
+                                                                '和信', '高配比', '加班', '小計',
+                                                                '薪資', '排班', '照服'])):
+                    unmatched.append(candidate)
+
+    return {
+        'year': year,
+        'month': month,
+        'sheet_name': ws.title,
+        'matched': matched,
+        'unmatched': unmatched,
+    }
 
 
 # --- Pages ---
@@ -768,6 +920,37 @@ def api_auto_confirm():
                 db.session.add(Schedule(employee_id=emp_id, date=d, shift=shift))
     db.session.commit()
     return jsonify({'ok': True})
+
+
+# --- API: Import Schedule from Excel ---
+
+@app.route('/api/schedule/import', methods=['POST'])
+def api_import_schedule():
+    if 'file' not in request.files:
+        return jsonify({'error': '未選擇檔案'}), 400
+    f = request.files['file']
+    if not f.filename.endswith('.xlsx'):
+        return jsonify({'error': '僅支援 .xlsx 格式'}), 400
+
+    from openpyxl import load_workbook
+    import io
+    wb = load_workbook(io.BytesIO(f.read()), data_only=True)
+
+    employees = Employee.query.filter_by(is_active=True).all()
+    emp_by_name = {e.name.strip(): e for e in employees}
+
+    sheets = []
+    for ws in wb.worksheets:
+        result = _parse_schedule_sheet(ws, emp_by_name)
+        if result and result['matched']:
+            sheets.append(result)
+
+    wb.close()
+
+    if not sheets:
+        return jsonify({'error': '無法從 Excel 中解析出任何排班資料，請確認格式正確'}), 400
+
+    return jsonify({'sheets': sheets})
 
 
 # --- API: Stats ---

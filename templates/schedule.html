@@ -25,6 +25,8 @@
         <select id="locationFilter" class="border rounded-lg px-3 py-2 text-sm">
             <option value="">全部地點</option>
         </select>
+        <button onclick="document.getElementById('importFile').click()" class="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 text-sm">匯入排班</button>
+        <input type="file" id="importFile" accept=".xlsx" class="hidden" onchange="handleImportFile(this)">
         <button id="autoBtn" onclick="showAutoModal()" class="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 text-sm">自動排班</button>
         <button onclick="prevMonth()" class="px-3 py-2 border rounded-lg hover:bg-gray-100">&larr;</button>
         <span id="monthLabel" class="text-lg font-bold min-w-[120px] text-center">{{ year }}年{{ month }}月</span>
@@ -71,6 +73,29 @@
         </div>
     </div>
 </div>
+<!-- Drop Overlay -->
+<div id="dropOverlay" class="hidden fixed inset-0 bg-indigo-600/30 backdrop-blur-sm flex items-center justify-center z-[60] pointer-events-none">
+    <div class="bg-white rounded-2xl shadow-2xl p-12 text-center border-4 border-dashed border-indigo-400">
+        <div class="text-5xl mb-4">📋</div>
+        <div class="text-2xl font-bold text-indigo-700">放開以匯入排班 Excel</div>
+        <div class="text-gray-500 mt-2">支援 .xlsx 格式</div>
+    </div>
+</div>
+
+<!-- Import Preview Modal -->
+<div id="importModal" class="hidden fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-6xl max-h-[85vh] overflow-auto">
+        <h2 class="text-xl font-bold mb-4">匯入排班預覽</h2>
+        <div id="importInfo" class="mb-3"></div>
+        <div id="importWarnings" class="mb-3"></div>
+        <div id="importPreviewContent" class="overflow-auto" style="max-height: 55vh;"></div>
+        <div class="flex justify-end gap-3 mt-4">
+            <button onclick="closeImportModal()" class="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
+            <button onclick="confirmImport()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700">確認匯入</button>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
@@ -363,6 +388,153 @@ async function confirmAutoSchedule() {
     closePreviewModal();
     loadSchedule();
 }
+
+// --- Import Schedule from Excel ---
+let importData = null;
+
+async function handleImportFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    input.value = ''; // reset so same file can be re-selected
+    await uploadAndPreview(file);
+}
+
+async function uploadAndPreview(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const res = await fetch('/api/schedule/import', { method: 'POST', body: formData });
+    const data = await res.json();
+
+    if (!res.ok) {
+        alert(data.error || '匯入失敗');
+        return;
+    }
+
+    importData = data;
+    showImportPreview();
+}
+
+function showImportPreview() {
+    const { sheets } = importData;
+
+    // Info
+    const infoDiv = document.getElementById('importInfo');
+    const sheetInfos = sheets.map(s => `${s.sheet_name}: ${s.year}年${s.month}月，${s.matched.length}人`);
+    infoDiv.innerHTML = `<div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700">
+        <div class="font-medium mb-1">解析結果</div>
+        ${sheetInfos.map(s => `<div>${s}</div>`).join('')}
+    </div>`;
+
+    // Warnings
+    const warningDiv = document.getElementById('importWarnings');
+    const allUnmatched = sheets.flatMap(s => s.unmatched);
+    if (allUnmatched.length > 0) {
+        warningDiv.innerHTML = `<div class="bg-yellow-50 border border-yellow-300 rounded-lg p-3 text-sm text-yellow-700">
+            <div class="font-medium mb-1">未匹配的名稱（將略過）</div>
+            <div>${allUnmatched.join('、')}</div>
+        </div>`;
+    } else {
+        warningDiv.innerHTML = '';
+    }
+
+    // Preview table
+    const contentDiv = document.getElementById('importPreviewContent');
+    let html = '';
+    for (const sheet of sheets) {
+        const days = new Date(sheet.year, sheet.month, 0).getDate();
+        html += `<div class="mb-4"><div class="font-bold text-gray-700 mb-1">${sheet.sheet_name}</div>`;
+        html += '<table class="schedule-table w-full"><thead><tr><th class="name-col">姓名</th>';
+        for (let d = 1; d <= days; d++) {
+            const dt = new Date(sheet.year, sheet.month - 1, d);
+            const wd = dt.getDay();
+            html += `<th style="min-width:28px;font-size:11px" class="${wd===0||wd===6?'weekend':''}">${d}<br>${WEEKDAYS[wd]}</th>`;
+        }
+        html += '<th>D</th><th>N</th><th>OFF</th></tr></thead><tbody>';
+
+        for (const row of sheet.matched) {
+            let dC = 0, nC = 0, offC = 0;
+            html += `<tr><td class="name-col text-xs font-medium">${row.employee.name}</td>`;
+            for (let d = 1; d <= days; d++) {
+                const s = row.shifts[String(d)] || 'OFF';
+                const cls = s === 'D' ? 'shift-d' : s === 'N' ? 'shift-n' : 'shift-off';
+                const dt = new Date(sheet.year, sheet.month - 1, d);
+                const isWe = dt.getDay() === 0 || dt.getDay() === 6;
+                html += `<td class="${cls} ${isWe ? 'weekend' : ''}" style="text-align:center;font-size:11px">${s}</td>`;
+                if (s === 'D') dC++; else if (s === 'N') nC++; else offC++;
+            }
+            html += `<td class="text-center stat-d text-xs">${dC}</td>`;
+            html += `<td class="text-center stat-n text-xs">${nC}</td>`;
+            html += `<td class="text-center text-gray-400 text-xs">${offC}</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+    }
+    contentDiv.innerHTML = html;
+    document.getElementById('importModal').classList.remove('hidden');
+}
+
+function closeImportModal() {
+    document.getElementById('importModal').classList.add('hidden');
+    importData = null;
+}
+
+async function confirmImport() {
+    if (!importData) return;
+
+    for (const sheet of importData.sheets) {
+        const payload = {
+            year: sheet.year,
+            month: sheet.month,
+            data: sheet.matched.map(row => ({
+                employee_id: row.employee.id,
+                shifts: row.shifts,
+            }))
+        };
+        await fetch('/api/schedule/auto-confirm', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        // Update current view to imported month
+        currentYear = sheet.year;
+        currentMonth = sheet.month;
+    }
+
+    closeImportModal();
+    loadSchedule();
+}
+
+// --- Drag and Drop ---
+let dragCounter = 0;
+document.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    dragCounter++;
+    if (dragCounter === 1) {
+        document.getElementById('dropOverlay').classList.remove('hidden');
+    }
+});
+document.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter === 0) {
+        document.getElementById('dropOverlay').classList.add('hidden');
+    }
+});
+document.addEventListener('dragover', (e) => {
+    e.preventDefault();
+});
+document.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    document.getElementById('dropOverlay').classList.add('hidden');
+    const files = e.dataTransfer.files;
+    if (files.length > 0 && files[0].name.endsWith('.xlsx')) {
+        uploadAndPreview(files[0]);
+    } else if (files.length > 0) {
+        alert('僅支援 .xlsx 格式');
+    }
+});
 
 loadSchedule();
 </script>
