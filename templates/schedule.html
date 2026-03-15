@@ -176,6 +176,32 @@
     .loc-badge-sh { background: #dbeafe; color: #1e40af; }
     .loc-badge-by { background: #d1fae5; color: #065f46; }
     .loc-badge-other { background: #fef3c7; color: #92400e; }
+
+    /* Name cell with action button */
+    .name-cell-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 2px;
+    }
+    .emp-action-btn {
+        flex-shrink: 0;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        color: #c0c5cc;
+        opacity: 0;
+        transition: all 0.15s;
+        cursor: pointer;
+        border: none;
+        background: none;
+        padding: 0;
+    }
+    .schedule-table tbody tr:hover .emp-action-btn { opacity: 1; }
+    .emp-action-btn:hover { background: #e0e7ff; color: #4f46e5; }
 </style>
 {% endblock %}
 
@@ -473,7 +499,14 @@ function renderSchedule() {
     tbody.innerHTML = data.map((row, idx) => {
         const emp = row.employee;
         let html = `<tr>`;
-        html += `<td class="name-col" oncontextmenu="showCtxMenu(event, ${emp.id}, '${emp.name}')" style="cursor:context-menu">${emp.name}</td>`;
+        html += `<td class="name-col">
+            <div class="name-cell-inner">
+                <span>${emp.name}</span>
+                <button class="emp-action-btn" onclick="event.stopPropagation(); toggleEmpMenu(event, ${emp.id}, '${emp.name}')" title="操作">
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="6" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="18" r="1.5"/></svg>
+                </button>
+            </div>
+        </td>`;
         if (showLoc) html += `<td class="loc-col">${locBadge(emp.location)}</td>`;
 
         let dCount = 0, nCount = 0, offCount = 0;
@@ -958,23 +991,27 @@ async function reactivateEmp(empId) {
     loadSchedule();
 }
 
-// --- Context Menu (Right-click on employee name) ---
+// --- Employee Action Menu ---
 let ctxEmpId = null;
 let ctxEmpName = '';
 
-function showCtxMenu(e, empId, empName) {
+function toggleEmpMenu(e, empId, empName) {
     e.preventDefault();
+    e.stopPropagation();
     ctxEmpId = empId;
     ctxEmpName = empName;
     const menu = document.getElementById('ctxMenu');
-    menu.style.left = e.clientX + 'px';
-    menu.style.top = e.clientY + 'px';
+
+    // Position near the button
+    const btnRect = e.currentTarget.getBoundingClientRect();
+    menu.style.left = btnRect.right + 4 + 'px';
+    menu.style.top = btnRect.top + 'px';
     menu.classList.remove('hidden');
 
     // Adjust if menu goes off screen
     requestAnimationFrame(() => {
         const rect = menu.getBoundingClientRect();
-        if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+        if (rect.right > window.innerWidth) menu.style.left = (btnRect.left - rect.width - 4) + 'px';
         if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
     });
 }
