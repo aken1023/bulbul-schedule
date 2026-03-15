@@ -303,7 +303,8 @@ def api_delete_location(lid):
 
 @app.route('/api/employees', methods=['GET'])
 def api_employees():
-    q = Employee.query.filter_by(is_active=True)
+    include_inactive = request.args.get('all') == '1'
+    q = Employee.query if include_inactive else Employee.query.filter_by(is_active=True)
     loc = request.args.get('location')
     if loc:
         q = q.filter_by(location=loc)
@@ -341,6 +342,8 @@ def api_update_employee(eid):
         emp.day_rate = int(data['day_rate'])
     if 'night_rate' in data:
         emp.night_rate = int(data['night_rate'])
+    if 'is_active' in data:
+        emp.is_active = bool(data['is_active'])
     db.session.commit()
     return jsonify(emp.to_dict())
 
