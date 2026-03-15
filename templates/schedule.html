@@ -772,19 +772,20 @@ async function confirmImport() {
     if (!importData) return;
 
     const clearFirst = document.getElementById('importClearFirst').checked;
+    const data = importData;
 
-    // Close preview, show loading overlay
-    closeImportModal();
+    // Close preview (sets importData=null), show loading overlay
+    document.getElementById('importModal').classList.add('hidden');
+    importData = null;
     showImportStatus('loading');
 
     let totalEmployees = 0;
-    let totalSheets = importData.sheets.length;
-    let hasError = false;
+    let totalSheets = data.sheets.length;
 
     try {
         // Clear existing data if requested
         if (clearFirst) {
-            const months = [...new Set(importData.sheets.map(s => `${s.year}-${s.month}`))];
+            const months = [...new Set(data.sheets.map(s => `${s.year}-${s.month}`))];
             for (const ym of months) {
                 const [y, m] = ym.split('-').map(Number);
                 updateStatusProgress(`正在清除 ${y}年${m}月 舊資料...`);
@@ -797,7 +798,7 @@ async function confirmImport() {
         }
 
         for (let i = 0; i < totalSheets; i++) {
-            const sheet = importData.sheets[i];
+            const sheet = data.sheets[i];
             totalEmployees += sheet.matched.length;
             updateStatusProgress(`正在寫入 ${sheet.sheet_name}（${i + 1}/${totalSheets}）...`);
 
