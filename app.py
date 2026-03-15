@@ -990,6 +990,25 @@ def api_import_schedule():
     return jsonify({'sheets': sheets})
 
 
+@app.route('/api/schedule/clear', methods=['POST'])
+def api_clear_schedule():
+    """清除某位員工某月的全部排班"""
+    data = request.json
+    emp_id = data['employee_id']
+    year = data['year']
+    month = data['month']
+    _, days_in_month = calendar.monthrange(year, month)
+    start = date(year, month, 1)
+    end = date(year, month, days_in_month)
+    Schedule.query.filter(
+        Schedule.employee_id == emp_id,
+        Schedule.date >= start,
+        Schedule.date <= end
+    ).delete()
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 # --- API: Stats ---
 
 @app.route('/api/stats', methods=['GET'])

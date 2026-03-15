@@ -292,6 +292,70 @@
     </div>
 </div>
 
+<!-- Context Menu -->
+<div id="ctxMenu" class="hidden fixed z-[80] bg-white rounded-xl shadow-xl border border-gray-200 py-1.5 w-44 overflow-hidden">
+    <button onclick="ctxClearSchedule()" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2.5 transition">
+        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182"/></svg>
+        清除本月排班
+    </button>
+    <button onclick="ctxDeactivateEmp()" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2.5 transition">
+        <svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M22 10.5h-6m-2.25-4.125a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zM4 19.235v-.11a6.375 6.375 0 0112.75 0v.109A12.318 12.318 0 0110.374 21c-2.331 0-4.512-.645-6.374-1.766z"/></svg>
+        停用此員工
+    </button>
+</div>
+
+<!-- Import Status Overlay -->
+<div id="importStatus" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-[70]">
+    <div id="importStatusCard" class="bg-white rounded-2xl shadow-2xl p-10 text-center w-80">
+        <!-- Loading state -->
+        <div id="statusLoading">
+            <div class="relative w-16 h-16 mx-auto mb-5">
+                <div class="absolute inset-0 rounded-full border-4 border-gray-200"></div>
+                <div class="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin"></div>
+            </div>
+            <div class="text-lg font-bold text-gray-800 mb-1">匯入中...</div>
+            <div id="statusProgress" class="text-sm text-gray-400">正在寫入排班資料</div>
+        </div>
+        <!-- Success state -->
+        <div id="statusSuccess" class="hidden">
+            <div class="w-16 h-16 mx-auto mb-5 bg-green-100 rounded-full flex items-center justify-center status-pop">
+                <svg class="w-9 h-9 text-green-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" class="status-check"/>
+                </svg>
+            </div>
+            <div class="text-lg font-bold text-gray-800 mb-1">匯入完成</div>
+            <div id="statusSummary" class="text-sm text-gray-400"></div>
+        </div>
+        <!-- Error state -->
+        <div id="statusError" class="hidden">
+            <div class="w-16 h-16 mx-auto mb-5 bg-red-100 rounded-full flex items-center justify-center status-pop">
+                <svg class="w-9 h-9 text-red-500" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </div>
+            <div class="text-lg font-bold text-gray-800 mb-1">匯入失敗</div>
+            <div id="statusErrorMsg" class="text-sm text-red-400"></div>
+        </div>
+    </div>
+</div>
+
+<style>
+    @keyframes statusPop {
+        0% { transform: scale(0); opacity: 0; }
+        50% { transform: scale(1.2); }
+        100% { transform: scale(1); opacity: 1; }
+    }
+    .status-pop { animation: statusPop 0.4s ease-out; }
+    @keyframes checkDraw {
+        from { stroke-dashoffset: 30; }
+        to { stroke-dashoffset: 0; }
+    }
+    .status-check {
+        stroke-dasharray: 30;
+        animation: checkDraw 0.5s ease-out 0.2s both;
+    }
+</style>
+
 <!-- Drop Overlay -->
 <div id="dropOverlay" class="hidden fixed inset-0 bg-indigo-600/20 backdrop-blur-sm flex items-center justify-center z-[60] pointer-events-none">
     <div class="bg-white rounded-2xl shadow-2xl p-14 text-center border-4 border-dashed border-indigo-400">
@@ -401,7 +465,7 @@ function renderSchedule() {
     tbody.innerHTML = data.map((row, idx) => {
         const emp = row.employee;
         let html = `<tr>`;
-        html += `<td class="name-col">${emp.name}</td>`;
+        html += `<td class="name-col" oncontextmenu="showCtxMenu(event, ${emp.id}, '${emp.name}')" style="cursor:context-menu">${emp.name}</td>`;
         if (showLoc) html += `<td class="loc-col">${locBadge(emp.location)}</td>`;
 
         let dCount = 0, nCount = 0, offCount = 0;
@@ -699,27 +763,89 @@ function closeImportModal() {
 async function confirmImport() {
     if (!importData) return;
 
-    for (const sheet of importData.sheets) {
-        const payload = {
-            year: sheet.year,
-            month: sheet.month,
-            data: sheet.matched.map(row => ({
-                employee_id: row.employee.id,
-                shifts: row.shifts,
-            }))
-        };
-        await fetch('/api/schedule/auto-confirm', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+    // Close preview, show loading overlay
+    closeImportModal();
+    showImportStatus('loading');
 
-        currentYear = sheet.year;
-        currentMonth = sheet.month;
+    let totalEmployees = 0;
+    let totalSheets = importData.sheets.length;
+    let hasError = false;
+
+    try {
+        for (let i = 0; i < totalSheets; i++) {
+            const sheet = importData.sheets[i];
+            totalEmployees += sheet.matched.length;
+            updateStatusProgress(`正在寫入 ${sheet.sheet_name}（${i + 1}/${totalSheets}）...`);
+
+            const payload = {
+                year: sheet.year,
+                month: sheet.month,
+                data: sheet.matched.map(row => ({
+                    employee_id: row.employee.id,
+                    shifts: row.shifts,
+                }))
+            };
+            const res = await fetch('/api/schedule/auto-confirm', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) {
+                hasError = true;
+                throw new Error(`${sheet.sheet_name} 寫入失敗`);
+            }
+
+            currentYear = sheet.year;
+            currentMonth = sheet.month;
+        }
+
+        // Show success
+        showImportStatus('success', `已匯入 ${totalSheets} 個工作表，共 ${totalEmployees} 位員工`);
+        await loadSchedule();
+
+        // Auto-dismiss after 1.8s
+        setTimeout(() => {
+            hideImportStatus();
+        }, 1800);
+
+    } catch (err) {
+        showImportStatus('error', err.message || '發生未知錯誤');
+        setTimeout(() => {
+            hideImportStatus();
+        }, 2500);
+    }
+}
+
+function showImportStatus(state, message) {
+    const overlay = document.getElementById('importStatus');
+    const loading = document.getElementById('statusLoading');
+    const success = document.getElementById('statusSuccess');
+    const error = document.getElementById('statusError');
+
+    loading.classList.add('hidden');
+    success.classList.add('hidden');
+    error.classList.add('hidden');
+
+    if (state === 'loading') {
+        loading.classList.remove('hidden');
+    } else if (state === 'success') {
+        document.getElementById('statusSummary').textContent = message || '';
+        success.classList.remove('hidden');
+    } else if (state === 'error') {
+        document.getElementById('statusErrorMsg').textContent = message || '';
+        error.classList.remove('hidden');
     }
 
-    closeImportModal();
-    loadSchedule();
+    overlay.classList.remove('hidden');
+}
+
+function updateStatusProgress(text) {
+    document.getElementById('statusProgress').textContent = text;
+}
+
+function hideImportStatus() {
+    document.getElementById('importStatus').classList.add('hidden');
 }
 
 // --- Add Employee from Employee Management ---
@@ -804,6 +930,51 @@ async function reactivateEmp(empId) {
         body: JSON.stringify({ is_active: true })
     });
     closeAddEmpModal();
+    loadSchedule();
+}
+
+// --- Context Menu (Right-click on employee name) ---
+let ctxEmpId = null;
+let ctxEmpName = '';
+
+function showCtxMenu(e, empId, empName) {
+    e.preventDefault();
+    ctxEmpId = empId;
+    ctxEmpName = empName;
+    const menu = document.getElementById('ctxMenu');
+    menu.style.left = e.clientX + 'px';
+    menu.style.top = e.clientY + 'px';
+    menu.classList.remove('hidden');
+
+    // Adjust if menu goes off screen
+    requestAnimationFrame(() => {
+        const rect = menu.getBoundingClientRect();
+        if (rect.right > window.innerWidth) menu.style.left = (window.innerWidth - rect.width - 8) + 'px';
+        if (rect.bottom > window.innerHeight) menu.style.top = (window.innerHeight - rect.height - 8) + 'px';
+    });
+}
+
+document.addEventListener('click', () => {
+    document.getElementById('ctxMenu').classList.add('hidden');
+});
+
+async function ctxClearSchedule() {
+    if (!confirm(`確定要清除「${ctxEmpName}」${currentYear}年${currentMonth}月的全部排班嗎？`)) return;
+    await fetch('/api/schedule/clear', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employee_id: ctxEmpId, year: currentYear, month: currentMonth })
+    });
+    loadSchedule();
+}
+
+async function ctxDeactivateEmp() {
+    if (!confirm(`確定要停用「${ctxEmpName}」嗎？停用後將不會出現在排班表中。`)) return;
+    await fetch(`/api/employees/${ctxEmpId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: false })
+    });
     loadSchedule();
 }
 
