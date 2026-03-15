@@ -372,6 +372,14 @@
         <div id="importInfo" class="mb-3"></div>
         <div id="importWarnings" class="mb-3"></div>
         <div id="importPreviewContent" class="overflow-auto" style="max-height: 55vh;"></div>
+        <!-- Clear option -->
+        <div class="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-3.5 flex items-start gap-3">
+            <input type="checkbox" id="importClearFirst" class="mt-0.5 w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer">
+            <label for="importClearFirst" class="cursor-pointer select-none">
+                <div class="text-sm font-medium text-gray-700">匯入前先清除該月份所有排班資料</div>
+                <div class="text-xs text-gray-400 mt-0.5">勾選後會先刪除該月份全部員工的排班，再寫入新資料</div>
+            </label>
+        </div>
         <div class="flex justify-end gap-3 mt-4">
             <button onclick="closeImportModal()" class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium">取消</button>
             <button onclick="confirmImport()" class="bg-indigo-600 text-white px-5 py-2 rounded-lg hover:bg-indigo-700 text-sm font-medium shadow-sm">確認匯入</button>
@@ -763,6 +771,8 @@ function closeImportModal() {
 async function confirmImport() {
     if (!importData) return;
 
+    const clearFirst = document.getElementById('importClearFirst').checked;
+
     // Close preview, show loading overlay
     closeImportModal();
     showImportStatus('loading');
@@ -772,6 +782,20 @@ async function confirmImport() {
     let hasError = false;
 
     try {
+        // Clear existing data if requested
+        if (clearFirst) {
+            const months = [...new Set(importData.sheets.map(s => `${s.year}-${s.month}`))];
+            for (const ym of months) {
+                const [y, m] = ym.split('-').map(Number);
+                updateStatusProgress(`正在清除 ${y}年${m}月 舊資料...`);
+                await fetch('/api/schedule/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ year: y, month: m })
+                });
+            }
+        }
+
         for (let i = 0; i < totalSheets; i++) {
             const sheet = importData.sheets[i];
             totalEmployees += sheet.matched.length;

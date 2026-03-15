@@ -992,21 +992,21 @@ def api_import_schedule():
 
 @app.route('/api/schedule/clear', methods=['POST'])
 def api_clear_schedule():
-    """清除某位員工某月的全部排班"""
+    """清除排班：單人或全體某月的排班"""
     data = request.json
-    emp_id = data['employee_id']
     year = data['year']
     month = data['month']
     _, days_in_month = calendar.monthrange(year, month)
     start = date(year, month, 1)
     end = date(year, month, days_in_month)
-    Schedule.query.filter(
-        Schedule.employee_id == emp_id,
-        Schedule.date >= start,
-        Schedule.date <= end
-    ).delete()
+
+    q = Schedule.query.filter(Schedule.date >= start, Schedule.date <= end)
+    emp_id = data.get('employee_id')
+    if emp_id:
+        q = q.filter(Schedule.employee_id == emp_id)
+    deleted = q.delete()
     db.session.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'deleted': deleted})
 
 
 # --- API: Stats ---
